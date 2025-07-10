@@ -190,6 +190,63 @@ router.get('/conversations/:conversationId', protect, [
   }
 });
 
+// @desc    Create or find conversation
+// @route   POST /api/messages/conversations
+// @access  Private
+router.post('/conversations', protect, [
+  body('participantId').isMongoId().withMessage('Valid participant ID is required'),
+  body('requestId').optional().isMongoId().withMessage('Invalid request ID'),
+  body('proposalId').optional().isMongoId().withMessage('Invalid proposal ID')
+], async (req: any, res: Response) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      const response: ApiResponse = {
+        success: false,
+        error: errors.array().map(err => err.msg).join(', ')
+      };
+      return res.status(400).json(response);
+    }
+
+    const { participantId, requestId, proposalId } = req.body;
+
+    // Prevent creating conversation with self
+    if (participantId === req.user.id) {
+      const response: ApiResponse = {
+        success: false,
+        error: 'Cannot create conversation with yourself'
+      };
+      return res.status(400).json(response);
+    }
+
+    // Find or create conversation
+    const conversation = await (Conversation as any).findOrCreate(
+      [req.user.id, participantId],
+      requestId
+    );
+
+    // Populate participant details
+    const populatedConversation = await Conversation.findById(conversation._id)
+      .populate('participantDetails', 'name avatar isVerified')
+      .populate('request', 'title visaType country status');
+
+    const response: ApiResponse = {
+      success: true,
+      data: populatedConversation,
+      message: 'Conversation created successfully'
+    };
+
+    res.status(200).json(response);
+  } catch (error) {
+    console.error('Create conversation error:', error);
+    const response: ApiResponse = {
+      success: false,
+      error: 'Error creating conversation'
+    };
+    res.status(500).json(response);
+  }
+});
+
 // @desc    Send a message
 // @route   POST /api/messages
 // @access  Private

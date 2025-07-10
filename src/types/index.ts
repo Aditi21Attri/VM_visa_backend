@@ -238,8 +238,9 @@ export interface CreateVisaRequestData {
   description: string;
   budget: string;
   timeline: string;
-  priority: 'low' | 'medium' | 'high' | 'urgent';
+  priority?: 'low' | 'medium' | 'high' | 'urgent';
   requirements?: string[];
+  attachments?: string[];
 }
 
 export interface UpdateVisaRequestData {
@@ -250,8 +251,10 @@ export interface UpdateVisaRequestData {
   budget?: string;
   timeline?: string;
   priority?: 'low' | 'medium' | 'high' | 'urgent';
-  requirements?: string[];
   status?: 'pending' | 'in-progress' | 'completed' | 'rejected' | 'cancelled';
+  requirements?: string[];
+  attachments?: string[];
+  assignedAgentId?: string;
 }
 
 export interface CreateProposalData {
@@ -260,7 +263,7 @@ export interface CreateProposalData {
   timeline: string;
   coverLetter: string;
   proposalText: string;
-  milestones: IMilestone[];
+  milestones?: IMilestone[];
   portfolio?: string[];
 }
 

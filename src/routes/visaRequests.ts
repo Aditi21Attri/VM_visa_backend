@@ -261,6 +261,8 @@ router.put('/:id', protect, [
 
     const updateData: UpdateVisaRequestData = req.body;
     
+    console.log('Updating visa request:', req.params.id, 'with data:', updateData);
+    
     const updatedRequest = await VisaRequest.findByIdAndUpdate(
       req.params.id,
       updateData,
@@ -274,11 +276,19 @@ router.put('/:id', protect, [
     };
 
     res.status(200).json(response);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Update visa request error:', error);
+    
+    // More detailed error logging
+    if (error.name === 'ValidationError') {
+      console.error('Validation errors:', error.errors);
+    }
+    
     const response: ApiResponse = {
       success: false,
-      error: 'Error updating visa request'
+      error: error.name === 'ValidationError' 
+        ? Object.values(error.errors).map((err: any) => err.message).join(', ')
+        : 'Error updating visa request'
     };
     res.status(500).json(response);
   }

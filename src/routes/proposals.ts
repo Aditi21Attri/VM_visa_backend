@@ -13,6 +13,31 @@ import {
 
 const router = express.Router();
 
+// Test auth endpoint
+router.get('/test-auth', protect, (req: any, res: Response) => {
+  res.json({
+    success: true,
+    user: {
+      id: req.user.id,
+      name: req.user.name,
+      userType: req.user.userType
+    }
+  });
+});
+
+// Test agent auth endpoint
+router.get('/test-agent-auth', protect, authorize('agent', 'organization'), (req: any, res: Response) => {
+  res.json({
+    success: true,
+    message: 'Agent/Organization auth successful',
+    user: {
+      id: req.user.id,
+      name: req.user.name,
+      userType: req.user.userType
+    }
+  });
+});
+
 // @desc    Get all proposals with filters and pagination
 // @route   GET /api/proposals
 // @access  Private (Admin only for all proposals)
@@ -146,6 +171,68 @@ router.get('/:id', protect, async (req: any, res: Response) => {
   }
 });
 
+// @desc    Create new proposal (simplified version)
+// @route   POST /api/proposals/simple
+// @access  Private (Agent or Organization only)
+router.post('/simple', protect, authorize('agent', 'organization'), async (req: any, res: Response) => {
+  try {
+    console.log('Simple proposal submission data:', JSON.stringify(req.body, null, 2));
+    console.log('User:', req.user.name, req.user.userType);
+    
+    const { requestId, budget, timeline, coverLetter, proposalText } = req.body;
+    
+    // Basic validation
+    if (!requestId || !budget || !timeline || !coverLetter || !proposalText) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields'
+      });
+    }
+    
+    // Check if visa request exists
+    const visaRequest = await VisaRequest.findById(requestId);
+    if (!visaRequest) {
+      return res.status(404).json({
+        success: false,
+        error: 'Visa request not found'
+      });
+    }
+    
+    // Create simple proposal without complex validation
+    const proposal = await Proposal.create({
+      requestId,
+      agentId: req.user.id,
+      budget: Number(budget),
+      timeline,
+      coverLetter,
+      proposalText,
+      milestones: [{
+        title: "Complete Visa Application",
+        description: "Full visa application processing",
+        amount: Number(budget),
+        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      }],
+      portfolio: []
+    });
+    
+    // Update proposal count
+    await VisaRequest.findByIdAndUpdate(requestId, { $inc: { proposalCount: 1 } });
+    
+    res.status(201).json({
+      success: true,
+      data: proposal,
+      message: 'Proposal submitted successfully'
+    });
+    
+  } catch (error) {
+    console.error('Simple proposal error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to submit proposal'
+    });
+  }
+});
+
 // @desc    Create new proposal
 // @route   POST /api/proposals
 // @access  Private (Agent or Organization only)
@@ -157,16 +244,20 @@ router.post('/', protect, authorize('agent', 'organization'), [
   ]).withMessage('Invalid timeline'),
   body('coverLetter').trim().isLength({ min: 10, max: 1000 }).withMessage('Cover letter must be between 10 and 1000 characters'),
   body('proposalText').trim().isLength({ min: 50, max: 3000 }).withMessage('Proposal text must be between 50 and 3000 characters'),
-  body('milestones').isArray({ min: 1 }).withMessage('At least one milestone is required'),
-  body('milestones.*.title').trim().isLength({ min: 3, max: 100 }).withMessage('Milestone title must be between 3 and 100 characters'),
-  body('milestones.*.description').trim().isLength({ min: 10, max: 500 }).withMessage('Milestone description must be between 10 and 500 characters'),
-  body('milestones.*.amount').isNumeric().isFloat({ min: 0 }).withMessage('Milestone amount must be positive'),
-  body('milestones.*.dueDate').isISO8601().withMessage('Invalid due date format'),
+  body('milestones').optional().isArray({ min: 1 }).withMessage('At least one milestone is required'),
+  body('milestones.*.title').optional().trim().isLength({ min: 3, max: 100 }).withMessage('Milestone title must be between 3 and 100 characters'),
+  body('milestones.*.description').optional().trim().isLength({ min: 10, max: 500 }).withMessage('Milestone description must be between 10 and 500 characters'),
+  body('milestones.*.amount').optional().isNumeric().isFloat({ min: 0 }).withMessage('Milestone amount must be positive'),
+  body('milestones.*.dueDate').optional().isISO8601().withMessage('Invalid due date format'),
+  body('milestones.*.deliverables').optional().isArray().withMessage('Deliverables must be an array'),
   body('portfolio').optional().isArray().withMessage('Portfolio must be an array')
 ], async (req: any, res: Response) => {
   try {
+    console.log('Received proposal data:', JSON.stringify(req.body, null, 2));
+    
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.log('Validation errors:', errors.array());
       const response: ApiResponse = {
         success: false,
         error: errors.array().map(err => err.msg).join(', ')
@@ -208,14 +299,16 @@ router.post('/', protect, authorize('agent', 'organization'), [
       return res.status(400).json(response);
     }
 
-    // Validate milestone amounts sum equals budget
-    const totalMilestoneAmount = proposalData.milestones.reduce((sum, milestone) => sum + milestone.amount, 0);
-    if (Math.abs(totalMilestoneAmount - proposalData.budget) > 0.01) {
-      const response: ApiResponse = {
-        success: false,
-        error: 'Sum of milestone amounts must equal the total budget'
-      };
-      return res.status(400).json(response);
+    // Validate milestone amounts sum equals budget (if milestones are provided)
+    if (proposalData.milestones && proposalData.milestones.length > 0) {
+      const totalMilestoneAmount = proposalData.milestones.reduce((sum, milestone) => sum + milestone.amount, 0);
+      if (Math.abs(totalMilestoneAmount - proposalData.budget) > 0.01) {
+        const response: ApiResponse = {
+          success: false,
+          error: 'Sum of milestone amounts must equal the total budget'
+        };
+        return res.status(400).json(response);
+      }
     }
 
     // Create proposal
