@@ -4,7 +4,9 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { protect, authorize } from '../middleware/auth';
-import { ApiResponse, PaginatedResponse } from '../types';
+import { ApiResponse, PaginatedResponse, IDocument } from '../types';
+import Document from '../models/Document';
+import { Document as MongooseDocument } from 'mongoose';
 
 const router = express.Router();
 
@@ -44,93 +46,6 @@ const upload = multer({
   },
   fileFilter: fileFilter
 });
-
-// Document model (we'll create this inline for now)
-import mongoose, { Schema } from 'mongoose';
-import { IDocument } from '../types';
-
-const documentSchema = new Schema<IDocument>({
-  userId: {
-    type: String,
-    required: [true, 'User ID is required'],
-    ref: 'User'
-  },
-  requestId: {
-    type: String,
-    ref: 'VisaRequest',
-    default: null
-  },
-  name: {
-    type: String,
-    required: [true, 'Document name is required']
-  },
-  originalName: {
-    type: String,
-    required: [true, 'Original filename is required']
-  },
-  type: {
-    type: String,
-    required: [true, 'File type is required']
-  },
-  size: {
-    type: Number,
-    required: [true, 'File size is required']
-  },
-  url: {
-    type: String,
-    required: [true, 'File URL is required']
-  },
-  cloudinaryPublicId: {
-    type: String,
-    default: null
-  },
-  category: {
-    type: String,
-    enum: ['passport', 'visa', 'education', 'employment', 'financial', 'other'],
-    default: 'other'
-  },
-  isVerified: {
-    type: Boolean,
-    default: false
-  },
-  verifiedBy: {
-    type: String,
-    ref: 'User',
-    default: null
-  },
-  verifiedAt: {
-    type: Date,
-    default: null
-  }
-}, {
-  timestamps: { createdAt: 'uploadedAt', updatedAt: true },
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true }
-});
-
-// Indexes
-documentSchema.index({ userId: 1 });
-documentSchema.index({ requestId: 1 });
-documentSchema.index({ category: 1 });
-documentSchema.index({ isVerified: 1 });
-
-// Virtual for user details
-documentSchema.virtual('user', {
-  ref: 'User',
-  localField: 'userId',
-  foreignField: '_id',
-  justOne: true
-});
-
-// Virtual for request details
-documentSchema.virtual('request', {
-  ref: 'VisaRequest',
-  localField: 'requestId',
-  foreignField: '_id',
-  justOne: true
-});
-
-const Document = mongoose.model<IDocument>('Document', documentSchema);
 
 // @desc    Upload document
 // @route   POST /api/documents/upload
@@ -235,7 +150,7 @@ router.get('/my-documents', protect, [
         .sort({ uploadedAt: -1 })
         .skip(skip)
         .limit(limitNum)
-        .lean(),
+        .lean() as unknown as IDocument[],
       Document.countDocuments(query)
     ]);
 
@@ -273,7 +188,7 @@ router.get('/:id', protect, async (req: any, res: Response) => {
     const document = await Document.findById(req.params.id)
       .populate('user', 'name avatar')
       .populate('request', 'title visaType')
-      .populate('verifiedBy', 'name');
+      .populate('verifiedBy', 'name') as unknown as IDocument;
 
     if (!document) {
       const response: ApiResponse = {
@@ -318,7 +233,7 @@ router.get('/:id', protect, async (req: any, res: Response) => {
 // @access  Private
 router.get('/:id/download', protect, async (req: any, res: Response) => {
   try {
-    const document = await Document.findById(req.params.id);
+    const document = await Document.findById(req.params.id) as unknown as IDocument;
 
     if (!document) {
       const response: ApiResponse = {
@@ -387,7 +302,7 @@ router.put('/:id', protect, [
       return res.status(400).json(response);
     }
 
-    const document = await Document.findById(req.params.id);
+    const document = await Document.findById(req.params.id) as unknown as IDocument;
 
     if (!document) {
       const response: ApiResponse = {
@@ -415,7 +330,7 @@ router.put('/:id', protect, [
       req.params.id,
       updateData,
       { new: true, runValidators: true }
-    ).populate('request', 'title visaType');
+    ).populate('request', 'title visaType') as unknown as IDocument;
 
     const response: ApiResponse = {
       success: true,
@@ -439,7 +354,7 @@ router.put('/:id', protect, [
 // @access  Private (Owner or Admin)
 router.delete('/:id', protect, async (req: any, res: Response) => {
   try {
-    const document = await Document.findById(req.params.id);
+    const document = await Document.findById(req.params.id) as unknown as IDocument;
 
     if (!document) {
       const response: ApiResponse = {
@@ -497,7 +412,7 @@ router.put('/:id/verify', protect, authorize('admin'), async (req: any, res: Res
       },
       { new: true }
     ).populate('user', 'name avatar')
-     .populate('verifiedBy', 'name');
+     .populate('verifiedBy', 'name') as unknown as IDocument;
 
     if (!document) {
       const response: ApiResponse = {
@@ -548,7 +463,7 @@ router.put('/:id/unverify', protect, authorize('admin'), async (req: Request, re
         verifiedAt: null
       },
       { new: true }
-    ).populate('user', 'name avatar');
+    ).populate('user', 'name avatar') as unknown as IDocument;
 
     if (!document) {
       const response: ApiResponse = {
@@ -629,7 +544,7 @@ router.get('/', protect, authorize('admin'), [
         .sort({ uploadedAt: -1 })
         .skip(skip)
         .limit(limitNum)
-        .lean(),
+        .lean() as unknown as IDocument[],
       Document.countDocuments(query)
     ]);
 

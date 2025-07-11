@@ -589,49 +589,138 @@ router.put('/:id/accept', protect, authorize('client'), async (req: any, res: Re
 
     console.log('All checks passed, accepting proposal...');
 
-    // Accept the proposal
-    proposal.status = 'accepted';
-    await proposal.save();
+    // Start a MongoDB session for transaction
+    const session = await mongoose.startSession();
+    
+    try {
+      await session.withTransaction(async () => {
+        // Accept the proposal
+        proposal.status = 'accepted';
+        proposal.respondedAt = new Date();
+        await proposal.save({ session });
 
-    // Update the visa request status
-    visaRequest.status = 'in-progress';
-    await visaRequest.save();
+        // Update the visa request status and assign agent
+        visaRequest.status = 'in-progress';
+        visaRequest.assignedAgentId = proposal.agentId;
+        await visaRequest.save({ session });
 
-    // Reject all other proposals for this request
-    await Proposal.updateMany(
-      { 
-        requestId: proposal.requestId, 
-        _id: { $ne: proposal._id },
-        status: 'pending'
-      }, 
-      { status: 'rejected' }
-    );
+        // Reject all other proposals for this request
+        await Proposal.updateMany(
+          { 
+            requestId: proposal.requestId, 
+            _id: { $ne: proposal._id },
+            status: 'pending'
+          }, 
+          { 
+            status: 'rejected',
+            respondedAt: new Date()
+          },
+          { session }
+        );
 
-    // Get the updated proposal with populated fields
-    const updatedProposal = await Proposal.findById(proposal._id);
-    if (!updatedProposal) {
-      console.error('Failed to retrieve updated proposal');
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to retrieve updated proposal'
+        // Create active case record
+        const Case = mongoose.model('Case');
+        const activeCase = new Case({
+          requestId: proposal.requestId,
+          proposalId: proposal._id,
+          clientId: visaRequest.userId,
+          agentId: proposal.agentId,
+          status: 'active',
+          milestones: proposal.milestones.map((milestone, index) => ({
+            ...milestone,
+            order: index + 1,
+            status: 'pending',
+            isActive: index === 0 // First milestone is active
+          })),
+          startDate: new Date(),
+          estimatedCompletionDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000) // 90 days from now
+        });
+        await activeCase.save({ session });
+
+        // Create notifications for all parties
+        const Notification = mongoose.model('Notification');
+        
+        // Notification for the winning agent
+        await new Notification({
+          userId: proposal.agentId,
+          title: 'Proposal Accepted!',
+          message: `Your proposal for "${visaRequest.title}" has been accepted. You can now start working on this case.`,
+          type: 'proposal',
+          data: {
+            proposalId: proposal._id,
+            requestId: proposal.requestId,
+            caseId: activeCase._id,
+            action: 'accepted'
+          }
+        }).save({ session });
+
+        // Notification for the client
+        await new Notification({
+          userId: visaRequest.userId,
+          title: 'Proposal Accepted',
+          message: `You have successfully accepted a proposal. Your case is now in progress.`,
+          type: 'proposal',
+          data: {
+            proposalId: proposal._id,
+            requestId: proposal.requestId,
+            caseId: activeCase._id,
+            agentId: proposal.agentId,
+            action: 'accepted'
+          }
+        }).save({ session });
+
+        // Get other agents whose proposals were rejected
+        const rejectedProposals = await Proposal.find({
+          requestId: proposal.requestId,
+          _id: { $ne: proposal._id },
+          status: 'rejected'
+        }, null, { session });
+
+        // Notifications for rejected agents
+        for (const rejectedProposal of rejectedProposals) {
+          await new Notification({
+            userId: rejectedProposal.agentId,
+            title: 'Proposal Not Selected',
+            message: `The client has selected another proposal for "${visaRequest.title}". Keep applying to more requests!`,
+            type: 'proposal',
+            data: {
+              proposalId: rejectedProposal._id,
+              requestId: proposal.requestId,
+              action: 'rejected'
+            }
+          }).save({ session });
+        }
       });
+
+      await session.endSession();
+
+      // Get the updated proposal with populated fields
+      const updatedProposal = await Proposal.findById(proposal._id);
+      if (!updatedProposal) {
+        throw new Error('Failed to retrieve updated proposal');
+      }
+      
+      const agent = await mongoose.model('User').findById(proposal.agentId, 'name avatar isVerified');
+      const activeCase = await mongoose.model('Case').findOne({ proposalId: proposal._id });
+
+      console.log('Proposal accepted successfully with case creation');
+
+      const response: ApiResponse = {
+        success: true,
+        data: {
+          ...updatedProposal.toObject(),
+          agent,
+          request: visaRequest,
+          case: activeCase
+        },
+        message: 'Proposal accepted successfully. Case is now active.'
+      };
+
+      res.status(200).json(response);
+    } catch (transactionError) {
+      await session.endSession();
+      throw transactionError;
     }
-
-    const agent = await mongoose.model('User').findById(proposal.agentId, 'name avatar isVerified');
-
-    console.log('Proposal accepted successfully');
-
-    const response: ApiResponse = {
-      success: true,
-      data: {
-        ...updatedProposal.toObject(),
-        agent,
-        request: visaRequest
-      },
-      message: 'Proposal accepted successfully'
-    };
-
-    res.status(200).json(response);
   } catch (error) {
     console.error('Accept proposal error:', error);
     const response: ApiResponse = {

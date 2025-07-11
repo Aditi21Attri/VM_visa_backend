@@ -253,6 +253,74 @@ export interface INotification extends Document {
   createdAt: Date;
 }
 
+export interface ICaseMilestone {
+  title: string;
+  description: string;
+  amount: number;
+  order: number;
+  status: 'pending' | 'in-progress' | 'completed' | 'approved' | 'rejected';
+  isActive: boolean;
+  dueDate: Date;
+  startedAt?: Date;
+  completedAt?: Date;
+  approvedAt?: Date;
+  deliverables: string[];
+  submittedFiles: {
+    name: string;
+    url: string;
+    uploadedAt: Date;
+  }[];
+  clientFeedback?: string;
+  agentNotes?: string;
+}
+
+export interface ICase extends Document {
+  _id: string;
+  requestId: string;
+  proposalId: string;
+  clientId: string;
+  agentId: string;
+  status: 'active' | 'completed' | 'cancelled' | 'disputed' | 'on-hold';
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  milestones: ICaseMilestone[];
+  currentMilestone: number;
+  progress: number;
+  totalAmount: number;
+  paidAmount: number;
+  escrowId?: string;
+  startDate: Date;
+  estimatedCompletionDate: Date;
+  actualCompletionDate?: Date;
+  lastActivity: Date;
+  clientNotes?: string;
+  agentNotes?: string;
+  documents: {
+    name: string;
+    url: string;
+    type: string;
+    uploadedBy: string;
+    uploadedAt: Date;
+  }[];
+  timeline: {
+    action: string;
+    description: string;
+    performedBy: string;
+    performedAt: Date;
+    data?: any;
+  }[];
+  reminders: {
+    title: string;
+    description: string;
+    dueDate: Date;
+    isCompleted: boolean;
+    createdBy: string;
+    createdAt: Date;
+  }[];
+  tags: string[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // API Response types
 export interface ApiResponse<T = any> {
   success: boolean;

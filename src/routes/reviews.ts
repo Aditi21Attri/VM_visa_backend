@@ -1,91 +1,10 @@
 import express, { Request, Response } from 'express';
 import { body, query, validationResult } from 'express-validator';
 import { protect } from '../middleware/auth';
-import { ApiResponse, PaginatedResponse } from '../types';
+import { ApiResponse, PaginatedResponse, IReview } from '../types';
+import Review from '../models/Review';
 
 const router = express.Router();
-
-// Review model (inline for now)
-import mongoose, { Schema } from 'mongoose';
-import { IReview } from '../types';
-
-const reviewSchema = new Schema<IReview>({
-  requestId: {
-    type: String,
-    required: [true, 'Request ID is required'],
-    ref: 'VisaRequest'
-  },
-  reviewerId: {
-    type: String,
-    required: [true, 'Reviewer ID is required'],
-    ref: 'User'
-  },
-  revieweeId: {
-    type: String,
-    required: [true, 'Reviewee ID is required'],
-    ref: 'User'
-  },
-  rating: {
-    type: Number,
-    required: [true, 'Rating is required'],
-    min: [1, 'Rating must be at least 1'],
-    max: [5, 'Rating cannot exceed 5']
-  },
-  comment: {
-    type: String,
-    required: [true, 'Comment is required'],
-    maxlength: [1000, 'Comment cannot exceed 1000 characters']
-  },
-  isPublic: {
-    type: Boolean,
-    default: true
-  },
-  isVerified: {
-    type: Boolean,
-    default: false
-  },
-  helpfulVotes: {
-    type: Number,
-    default: 0
-  }
-}, {
-  timestamps: true,
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true }
-});
-
-// Indexes
-reviewSchema.index({ requestId: 1 });
-reviewSchema.index({ reviewerId: 1 });
-reviewSchema.index({ revieweeId: 1 });
-reviewSchema.index({ rating: 1 });
-reviewSchema.index({ isPublic: 1 });
-
-// Virtual for reviewer details
-reviewSchema.virtual('reviewer', {
-  ref: 'User',
-  localField: 'reviewerId',
-  foreignField: '_id',
-  justOne: true
-});
-
-// Virtual for reviewee details
-reviewSchema.virtual('reviewee', {
-  ref: 'User',
-  localField: 'revieweeId',
-  foreignField: '_id',
-  justOne: true
-});
-
-// Virtual for request details
-reviewSchema.virtual('request', {
-  ref: 'VisaRequest',
-  localField: 'requestId',
-  foreignField: '_id',
-  justOne: true
-});
-
-const Review = mongoose.model<IReview>('Review', reviewSchema);
 
 // @desc    Create review
 // @route   POST /api/reviews
@@ -215,7 +134,7 @@ router.get('/user/:userId', [
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limitNum)
-        .lean(),
+        .lean() as unknown as IReview[],
       Review.countDocuments(query)
     ]);
 
@@ -301,7 +220,7 @@ router.get('/given', protect, [
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limitNum)
-        .lean(),
+        .lean() as unknown as IReview[],
       Review.countDocuments({ reviewerId: req.user.id })
     ]);
 
@@ -349,7 +268,7 @@ router.put('/:id', protect, [
       return res.status(400).json(response);
     }
 
-    const review = await Review.findById(req.params.id);
+    const review = await Review.findById(req.params.id) as unknown as IReview;
 
     if (!review) {
       const response: ApiResponse = {
@@ -404,7 +323,7 @@ router.put('/:id', protect, [
 // @access  Private (Review owner only)
 router.delete('/:id', protect, async (req: any, res: Response) => {
   try {
-    const review = await Review.findById(req.params.id);
+    const review = await Review.findById(req.params.id) as unknown as IReview;
 
     if (!review) {
       const response: ApiResponse = {
@@ -449,7 +368,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     const review = await Review.findById(req.params.id)
       .populate('reviewer', 'name avatar isVerified')
       .populate('reviewee', 'name avatar')
-      .populate('request', 'title visaType');
+      .populate('request', 'title visaType') as unknown as IReview;
 
     if (!review) {
       const response: ApiResponse = {

@@ -8,6 +8,17 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import dotenv from 'dotenv';
 
+// Model imports to ensure they are registered
+import './models/User';
+import './models/VisaRequest';
+import './models/Proposal';
+import './models/Message';
+import './models/Document';
+import './models/Escrow';
+import './models/Review';
+import './models/Notification';
+import './models/Case';
+
 import { connectDB } from './config/database';
 import { errorHandler } from './middleware/errorHandler';
 import { notFound } from './middleware/notFound';
@@ -23,6 +34,7 @@ import escrowRoutes from './routes/escrow';
 import reviewRoutes from './routes/reviews';
 import adminRoutes from './routes/admin';
 import dashboardRoutes from './routes/dashboard';
+import caseRoutes from './routes/cases';
 
 // Socket handlers
 import { initializeSocket } from './sockets/socketHandler';
@@ -77,6 +89,7 @@ app.use('/api/escrow', escrowRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/cases', caseRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
