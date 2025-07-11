@@ -21,6 +21,55 @@ export interface IUser extends Document {
   resetPasswordExpire?: Date;
   createdAt: Date;
   updatedAt: Date;
+  
+  // Client-specific fields (can be stored directly in User model for simplicity)
+  dateOfBirth?: string;
+  nationality?: string;
+  passportNumber?: string;
+  visaHistory?: string;
+  preferredCountries?: string[];
+  emergencyContact?: {
+    name: string;
+    phone: string;
+    relationship: string;
+  };
+  
+  // Agent-specific fields (basic ones, detailed ones in AgentProfile)
+  title?: string;
+  website?: string;
+  experienceYears?: number;
+  specializations?: string[];
+  languages?: string[];
+  hourlyRate?: number;
+  licenseNumber?: string;
+  certifications?: string[];
+  portfolioItems?: string[];
+  availability?: string;
+  businessHours?: {
+    start: string;
+    end: string;
+    timezone: string;
+  };
+  rates?: {
+    consultation: number;
+    minimum: number;
+  };
+  acceptsUrgentCases?: boolean;
+  
+  // Additional agent fields
+  responseTime?: string;
+  minimumBudget?: number;
+  consultationFee?: number;
+  portfolio?: string[];
+  
+  // Organization-specific fields (basic ones, detailed ones in OrganizationProfile)
+  organizationName?: string;
+  organizationType?: string;
+  registrationNumber?: string;
+  establishedYear?: number;
+  teamSize?: number;
+  services?: string[];
+  
   // Methods
   matchPassword(password: string): Promise<boolean>;
   getSignedJwtToken(): string;

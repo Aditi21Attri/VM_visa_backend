@@ -71,7 +71,131 @@ const userSchema = new Schema<IUser>({
   resetPasswordExpire: {
     type: Date,
     default: null
-  }
+  },
+  
+  // Client-specific fields
+  dateOfBirth: {
+    type: String,
+    default: ''
+  },
+  nationality: {
+    type: String,
+    default: ''
+  },
+  passportNumber: {
+    type: String,
+    default: ''
+  },
+  visaHistory: {
+    type: String,
+    default: ''
+  },
+  preferredCountries: [{
+    type: String
+  }],
+  emergencyContact: {
+    name: { type: String, default: '' },
+    phone: { type: String, default: '' },
+    relationship: { type: String, default: '' }
+  },
+  
+  // Agent-specific fields
+  title: {
+    type: String,
+    default: ''
+  },
+  website: {
+    type: String,
+    default: ''
+  },
+  experienceYears: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  specializations: [{
+    type: String
+  }],
+  languages: [{
+    type: String
+  }],
+  hourlyRate: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  licenseNumber: {
+    type: String,
+    default: ''
+  },
+  certifications: [{
+    type: String
+  }],
+  portfolioItems: [{
+    type: String
+  }],
+  availability: {
+    type: String,
+    default: 'full-time'
+  },
+  businessHours: {
+    start: { type: String, default: '09:00' },
+    end: { type: String, default: '17:00' },
+    timezone: { type: String, default: 'America/Toronto' }
+  },
+  rates: {
+    consultation: { type: Number, default: 0 },
+    minimum: { type: Number, default: 1000 }
+  },
+  acceptsUrgentCases: {
+    type: Boolean,
+    default: true
+  },
+  
+  // Additional agent fields for profile completion
+  responseTime: {
+    type: String,
+    default: '24-hours'
+  },
+  minimumBudget: {
+    type: Number,
+    default: 1000,
+    min: 0
+  },
+  consultationFee: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  portfolio: [{
+    type: String
+  }],
+  
+  // Organization-specific fields
+  organizationName: {
+    type: String,
+    default: ''
+  },
+  organizationType: {
+    type: String,
+    default: ''
+  },
+  registrationNumber: {
+    type: String,
+    default: ''
+  },
+  establishedYear: {
+    type: Number,
+    default: null
+  },
+  teamSize: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  services: [{
+    type: String
+  }]
 }, {
   timestamps: true,
   toJSON: { virtuals: true },

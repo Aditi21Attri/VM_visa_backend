@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import { body, query, validationResult } from 'express-validator';
 import Proposal from '../models/Proposal';
 import VisaRequest from '../models/VisaRequest';
@@ -38,10 +39,37 @@ router.get('/test-agent-auth', protect, authorize('agent', 'organization'), (req
   });
 });
 
-// @desc    Get all proposals with filters and pagination
+// Debug endpoint to check current user
+router.get('/debug/current-user', protect, (req: any, res: Response) => {
+  res.json({
+    success: true,
+    user: {
+      id: req.user._id,
+      name: req.user.name,
+      email: req.user.email,
+      userType: req.user.userType,
+      isActive: req.user.isActive
+    }
+  });
+});
+
+// Debug endpoint to test client authorization  
+router.get('/debug/client-auth', protect, authorize('client'), (req: any, res: Response) => {
+  res.json({
+    success: true,
+    message: 'Client authorization successful',
+    user: {
+      id: req.user._id,
+      name: req.user.name,
+      userType: req.user.userType
+    }
+  });
+});
+
+// @desc    Get proposals with filters and pagination
 // @route   GET /api/proposals
-// @access  Private (Admin only for all proposals)
-router.get('/', protect, authorize('admin'), [
+// @access  Private (Role-based access)
+router.get('/', protect, [
   query('page').optional().isInt({ min: 1 }),
   query('limit').optional().isInt({ min: 1, max: 100 }),
   query('sort').optional().isIn(['submittedAt', 'budget', 'status']),
@@ -49,7 +77,7 @@ router.get('/', protect, authorize('admin'), [
   query('requestId').optional().isMongoId(),
   query('agentId').optional().isMongoId(),
   query('status').optional().isIn(['pending', 'accepted', 'rejected', 'withdrawn'])
-], async (req: Request, res: Response) => {
+], async (req: any, res: Response) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -70,11 +98,66 @@ router.get('/', protect, authorize('admin'), [
       status
     }: ProposalQueryParams = req.query;
 
-    // Build query
+    // Build query with role-based access control
     const query: any = {};
-    if (requestId) query.requestId = requestId;
-    if (agentId) query.agentId = agentId;
-    if (status) query.status = status;
+    
+    console.log('=== GET PROPOSALS DEBUG ===');
+    console.log('User:', { id: req.user._id, userType: req.user.userType });
+    console.log('Query params:', { requestId, agentId, status });
+    
+    // Role-based access control
+    if (req.user.userType === 'admin') {
+      // Admins can see all proposals
+      if (requestId) query.requestId = requestId;
+      if (agentId) query.agentId = agentId;
+      if (status) query.status = status;
+    } else if (req.user.userType === 'agent') {
+      // Agents can only see their own proposals
+      query.agentId = req.user._id;
+      if (requestId) query.requestId = requestId;
+      if (status) query.status = status;
+    } else if (req.user.userType === 'client') {
+      // Clients can see proposals for their requests
+      if (requestId) {
+        // Verify the request belongs to the client
+        const visaRequest = await VisaRequest.findOne({ 
+          _id: requestId, 
+          userId: req.user._id 
+        });
+        console.log('VisaRequest found for client:', !!visaRequest);
+        if (visaRequest) {
+          query.requestId = requestId;
+          if (status) query.status = status;
+        } else {
+          const response: ApiResponse = {
+            success: false,
+            error: 'Access denied to this visa request'
+          };
+          return res.status(403).json(response);
+        }
+      } else {
+        // Get all requests for this client first
+        const clientRequests = await VisaRequest.find({ 
+          userId: req.user._id 
+        }, '_id');
+        console.log('Client requests found:', clientRequests.length);
+        query.requestId = { $in: clientRequests.map(r => r._id) };
+        if (status) query.status = status;
+      }
+    } else if (req.user.userType === 'organization') {
+      // Organizations can see proposals for their members' requests
+      const orgRequests = await VisaRequest.find({ 
+        organizationId: req.user._id 
+      }, '_id');
+      query.requestId = { $in: orgRequests.map(r => r._id) };
+      if (status) query.status = status;
+    } else {
+      const response: ApiResponse = {
+        success: false,
+        error: 'Access denied'
+      };
+      return res.status(403).json(response);
+    }
 
     // Calculate pagination
     const pageNum = parseInt(page.toString());
@@ -84,6 +167,9 @@ router.get('/', protect, authorize('admin'), [
     // Build sort object
     const sortObj: any = {};
     sortObj[sort] = order === 'desc' ? -1 : 1;
+
+    console.log('Final query:', JSON.stringify(query, null, 2));
+    console.log('Pagination:', { page: pageNum, limit: limitNum, skip });
 
     // Execute query
     const [proposals, total] = await Promise.all([
@@ -96,6 +182,8 @@ router.get('/', protect, authorize('admin'), [
         .lean(),
       Proposal.countDocuments(query)
     ]);
+
+    console.log('Query results:', { proposalsCount: proposals.length, total });
 
     const totalPages = Math.ceil(total / limitNum);
 
@@ -176,8 +264,10 @@ router.get('/:id', protect, async (req: any, res: Response) => {
 // @access  Private (Agent or Organization only)
 router.post('/simple', protect, authorize('agent', 'organization'), async (req: any, res: Response) => {
   try {
-    console.log('Simple proposal submission data:', JSON.stringify(req.body, null, 2));
-    console.log('User:', req.user.name, req.user.userType);
+    console.log('=== SIMPLE PROPOSAL SUBMISSION ===');
+    console.log('Headers:', req.headers.authorization ? 'Token present' : 'No token');
+    console.log('User info:', req.user ? { id: req.user.id, name: req.user.name, userType: req.user.userType } : 'No user');
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
     
     const { requestId, budget, timeline, coverLetter, proposalText } = req.body;
     
@@ -437,10 +527,14 @@ router.put('/:id', protect, [
 // @access  Private (Request owner only)
 router.put('/:id/accept', protect, authorize('client'), async (req: any, res: Response) => {
   try {
-    const proposal = await Proposal.findById(req.params.id)
-      .populate('request', 'userId status');
+    console.log('=== ACCEPT PROPOSAL DEBUG ===');
+    console.log('Proposal ID:', req.params.id);
+    console.log('User ID:', req.user._id);
+
+    const proposal = await Proposal.findById(req.params.id);
 
     if (!proposal) {
+      console.log('Proposal not found');
       const response: ApiResponse = {
         success: false,
         error: 'Proposal not found'
@@ -448,8 +542,24 @@ router.put('/:id/accept', protect, authorize('client'), async (req: any, res: Re
       return res.status(404).json(response);
     }
 
+    console.log('Proposal found:', { requestId: proposal.requestId, status: proposal.status });
+
+    // Get the visa request separately
+    const visaRequest = await VisaRequest.findById(proposal.requestId);
+    if (!visaRequest) {
+      console.log('Visa request not found');
+      const response: ApiResponse = {
+        success: false,
+        error: 'Associated visa request not found'
+      };
+      return res.status(404).json(response);
+    }
+
+    console.log('Visa request found:', { userId: visaRequest.userId, status: visaRequest.status });
+
     // Check if user owns the request
-    if ((proposal.requestId as any).userId !== req.user.id) {
+    if (visaRequest.userId !== req.user._id) {
+      console.log('User not authorized:', { visaRequestUserId: visaRequest.userId, currentUserId: req.user._id });
       const response: ApiResponse = {
         success: false,
         error: 'Not authorized to accept this proposal'
@@ -459,6 +569,7 @@ router.put('/:id/accept', protect, authorize('client'), async (req: any, res: Re
 
     // Check if proposal is pending
     if (proposal.status !== 'pending') {
+      console.log('Proposal not pending:', proposal.status);
       const response: ApiResponse = {
         success: false,
         error: 'Proposal is no longer pending'
@@ -467,7 +578,8 @@ router.put('/:id/accept', protect, authorize('client'), async (req: any, res: Re
     }
 
     // Check if request is still pending
-    if ((proposal.requestId as any).status !== 'pending') {
+    if (visaRequest.status !== 'pending') {
+      console.log('Visa request not pending:', visaRequest.status);
       const response: ApiResponse = {
         success: false,
         error: 'This visa request is no longer accepting proposals'
@@ -475,17 +587,47 @@ router.put('/:id/accept', protect, authorize('client'), async (req: any, res: Re
       return res.status(400).json(response);
     }
 
-    // Accept the proposal (this will trigger pre-save middleware to update request and reject other proposals)
+    console.log('All checks passed, accepting proposal...');
+
+    // Accept the proposal
     proposal.status = 'accepted';
     await proposal.save();
 
-    const updatedProposal = await Proposal.findById(proposal._id)
-      .populate('agent', 'name avatar isVerified')
-      .populate('request', 'title visaType country status');
+    // Update the visa request status
+    visaRequest.status = 'in-progress';
+    await visaRequest.save();
+
+    // Reject all other proposals for this request
+    await Proposal.updateMany(
+      { 
+        requestId: proposal.requestId, 
+        _id: { $ne: proposal._id },
+        status: 'pending'
+      }, 
+      { status: 'rejected' }
+    );
+
+    // Get the updated proposal with populated fields
+    const updatedProposal = await Proposal.findById(proposal._id);
+    if (!updatedProposal) {
+      console.error('Failed to retrieve updated proposal');
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to retrieve updated proposal'
+      });
+    }
+
+    const agent = await mongoose.model('User').findById(proposal.agentId, 'name avatar isVerified');
+
+    console.log('Proposal accepted successfully');
 
     const response: ApiResponse = {
       success: true,
-      data: updatedProposal,
+      data: {
+        ...updatedProposal.toObject(),
+        agent,
+        request: visaRequest
+      },
       message: 'Proposal accepted successfully'
     };
 
