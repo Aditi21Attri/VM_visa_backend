@@ -136,7 +136,21 @@ router.get('/:id', protect, async (req: any, res: Response) => {
     }
 
     // Check if user has access to this case
-    if (caseItem.clientId !== req.user._id && caseItem.agentId !== req.user._id) {
+    const clientId = (caseItem.clientId as any)?._id || caseItem.clientId;
+    const agentId = (caseItem.agentId as any)?._id || caseItem.agentId;
+    const hasClientAccess = clientId && clientId.toString() === req.user._id.toString();
+    const hasAgentAccess = agentId && agentId.toString() === req.user._id.toString();
+    
+    if (!hasClientAccess && !hasAgentAccess) {
+      console.log('Access denied for case:', {
+        caseId: req.params.id,
+        userId: req.user._id.toString(),
+        userType: req.user.userType,
+        caseClientId: clientId?.toString(),
+        caseAgentId: agentId?.toString(),
+        populatedClientId: caseItem.clientId,
+        populatedAgentId: caseItem.agentId
+      });
       return res.status(403).json({
         success: false,
         error: 'Access denied'
