@@ -296,11 +296,11 @@ router.put('/:id/milestones/:milestoneIndex/approve', protect, authorize('client
 
     const milestone = caseItem.milestones[milestoneIndex];
 
-    // Check if milestone is completed
-    if (milestone.status !== 'completed') {
+    // Check if milestone can be approved
+    if (!['in-progress', 'completed', 'pending_approval'].includes(milestone.status)) {
       return res.status(400).json({
         success: false,
-        error: 'Milestone must be completed before approval'
+        error: 'Milestone must be in progress or completed before approval'
       });
     }
 
@@ -1189,11 +1189,11 @@ router.put('/:id/milestones/:milestoneIndex/approve', protect, authorize('client
 
     const milestone = caseData.milestones[milestoneIndex];
 
-    // Can only approve/reject completed milestones
-    if (milestone.status !== 'completed') {
+    // Can only approve/reject milestones that are in progress or completed
+    if (!['in-progress', 'completed', 'pending_approval'].includes(milestone.status)) {
       const response: ApiResponse = {
         success: false,
-        error: 'Can only approve or reject completed milestones'
+        error: 'Can only approve or reject milestones that are in progress or completed'
       };
       return res.status(400).json(response);
     }

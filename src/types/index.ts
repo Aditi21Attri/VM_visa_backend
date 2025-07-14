@@ -70,6 +70,25 @@ export interface IUser extends Document {
   teamSize?: number;
   services?: string[];
   
+  // Notification settings
+  notificationSettings?: {
+    proposalUpdates: boolean;
+    messageAlerts: boolean;
+    deadlineReminders: boolean;
+    statusUpdates: boolean;
+    email: boolean;
+    push: boolean;
+    sms: boolean;
+  };
+  
+  // Privacy settings
+  privacySettings?: {
+    profileVisibility: 'public' | 'limited' | 'private';
+    showContactInfo: boolean;
+    allowDirectMessages: boolean;
+    shareProgressWithFamily: boolean;
+  };
+  
   // Methods
   matchPassword(password: string): Promise<boolean>;
   getSignedJwtToken(): string;

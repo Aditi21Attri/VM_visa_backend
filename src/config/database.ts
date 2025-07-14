@@ -9,10 +9,24 @@ export const connectDB = async () => {
     // Handle connection events
     mongoose.connection.on('error', (err) => {
       console.error('❌ MongoDB connection error:', err);
+      // Don't exit, just log the error
     });
     
     mongoose.connection.on('disconnected', () => {
       console.log('⚠️ MongoDB disconnected');
+      // Attempt to reconnect
+      setTimeout(() => {
+        console.log('🔄 Attempting to reconnect to MongoDB...');
+        connectDB();
+      }, 5000);
+    });
+    
+    mongoose.connection.on('connected', () => {
+      console.log('✅ MongoDB connected successfully');
+    });
+    
+    mongoose.connection.on('reconnected', () => {
+      console.log('🔄 MongoDB reconnected');
     });
     
     // Graceful shutdown

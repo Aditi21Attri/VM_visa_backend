@@ -756,7 +756,7 @@ router.put('/:id/accept', protect, authorize('client'), async (req: any, res: Re
           request: visaRequest,
           case: activeCase,
           navigation: {
-            redirectTo: '/dashboard/cases',
+            redirectTo: '/dashboard',
             caseId: activeCase._id,
             message: 'Your request has been converted to an active case. You can now track progress!'
           }

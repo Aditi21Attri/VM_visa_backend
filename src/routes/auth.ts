@@ -482,4 +482,93 @@ router.post('/logout', protect, async (req: Request, res: Response) => {
   }
 });
 
+// @desc    Update user profile
+// @route   PUT /api/auth/profile
+// @access  Private
+router.put('/profile', protect, [
+  body('name').optional().trim().isLength({ min: 2, max: 50 }).withMessage('Name must be between 2 and 50 characters'),
+  body('email').optional().isEmail().normalizeEmail().withMessage('Please provide a valid email'),
+  body('phone').optional().trim(),
+  body('bio').optional().trim(),
+  body('location').optional().trim()
+], async (req: any, res: Response) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      const response: ApiResponse = {
+        success: false,
+        error: errors.array().map(err => err.msg).join(', ')
+      };
+      return res.status(400).json(response);
+    }
+
+    const userId = req.user.id;
+    const updateData = { ...req.body };
+    
+    // Remove undefined values
+    Object.keys(updateData).forEach(key => 
+      updateData[key] === undefined && delete updateData[key]
+    );
+
+    // If email is being updated, check if it's already taken
+    if (updateData.email) {
+      const existingUser = await User.findOne({ 
+        email: updateData.email, 
+        _id: { $ne: userId } 
+      });
+      if (existingUser) {
+        const response: ApiResponse = {
+          success: false,
+          error: 'Email is already taken'
+        };
+        return res.status(400).json(response);
+      }
+    }
+
+    const user = await User.findByIdAndUpdate(
+      userId,
+      updateData,
+      { new: true, runValidators: true }
+    ).select('-password -resetPasswordToken -resetPasswordExpire -verificationToken');
+
+    if (!user) {
+      const response: ApiResponse = {
+        success: false,
+        error: 'User not found'
+      };
+      return res.status(404).json(response);
+    }
+
+    const response: ApiResponse = {
+      success: true,
+      data: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        userType: user.userType,
+        avatar: user.avatar,
+        bio: user.bio,
+        location: user.location,
+        phone: user.phone,
+        isVerified: user.isVerified,
+        isActive: user.isActive,
+        notificationSettings: user.notificationSettings,
+        privacySettings: user.privacySettings,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt
+      },
+      message: 'Profile updated successfully'
+    };
+
+    res.status(200).json(response);
+  } catch (error) {
+    console.error('Update profile error:', error);
+    const response: ApiResponse = {
+      success: false,
+      error: 'Error updating profile'
+    };
+    res.status(500).json(response);
+  }
+});
+
 export default router;

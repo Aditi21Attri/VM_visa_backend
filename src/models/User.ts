@@ -195,7 +195,26 @@ const userSchema = new Schema<IUser>({
   },
   services: [{
     type: String
-  }]
+  }],
+  
+  // Notification settings
+  notificationSettings: {
+    proposalUpdates: { type: Boolean, default: true },
+    messageAlerts: { type: Boolean, default: true },
+    deadlineReminders: { type: Boolean, default: true },
+    statusUpdates: { type: Boolean, default: true },
+    email: { type: Boolean, default: true },
+    push: { type: Boolean, default: true },
+    sms: { type: Boolean, default: false }
+  },
+  
+  // Privacy settings
+  privacySettings: {
+    profileVisibility: { type: String, default: 'public', enum: ['public', 'limited', 'private'] },
+    showContactInfo: { type: Boolean, default: true },
+    allowDirectMessages: { type: Boolean, default: true },
+    shareProgressWithFamily: { type: Boolean, default: false }
+  }
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
@@ -203,7 +222,6 @@ const userSchema = new Schema<IUser>({
 });
 
 // Indexes for better performance
-userSchema.index({ email: 1 });
 userSchema.index({ userType: 1 });
 userSchema.index({ isVerified: 1 });
 userSchema.index({ createdAt: -1 });
