@@ -98,23 +98,76 @@ export const initializeSocket = (io: Server) => {
       });
     });
 
-    // Handle escrow notifications
-    socket.on('escrowUpdate', (data: { escrowId: string; clientId: string; agentId: string; type: string }) => {
+    // Handle escrow notifications with enhanced functionality
+    socket.on('escrowUpdate', (data: { escrowId: string; clientId: string; agentId: string; type: string; amount?: number; reason?: string }) => {
       // Notify both client and agent
       socket.to(`user_${data.clientId}`).emit('escrowNotification', {
         type: data.type,
         escrowId: data.escrowId,
+        amount: data.amount,
+        reason: data.reason,
         timestamp: new Date()
       });
 
       socket.to(`user_${data.agentId}`).emit('escrowNotification', {
         type: data.type,
         escrowId: data.escrowId,
+        amount: data.amount,
+        reason: data.reason,
         timestamp: new Date()
       });
     });
 
-    // Handle milestone updates
+    // Enhanced escrow events
+    socket.on('escrow:fund', async (data) => {
+      try {
+        // Emit to agent that escrow has been funded
+        io.to(`user_${data.agentId}`).emit('escrow:funded', {
+          escrowId: data.escrowId,
+          amount: data.amount,
+          clientId: socket.userId,
+          message: 'Escrow has been funded for your proposal'
+        });
+      } catch (error) {
+        console.error('Error handling escrow fund event:', error);
+      }
+    });
+
+    socket.on('escrow:release', async (data) => {
+      try {
+        // Emit to both parties about escrow release
+        io.to(`user_${data.agentId}`).emit('escrow:released', {
+          escrowId: data.escrowId,
+          amount: data.amount,
+          message: 'Escrow funds have been released to you'
+        });
+        
+        io.to(`user_${data.clientId}`).emit('escrow:released', {
+          escrowId: data.escrowId,
+          amount: data.amount,
+          message: 'Escrow funds have been released to agent'
+        });
+      } catch (error) {
+        console.error('Error handling escrow release event:', error);
+      }
+    });
+
+    socket.on('escrow:dispute', async (data) => {
+      try {
+        // Emit to other party about dispute
+        const otherPartyId = data.raisedBy === data.clientId ? data.agentId : data.clientId;
+        io.to(`user_${otherPartyId}`).emit('escrow:disputed', {
+          escrowId: data.escrowId,
+          reason: data.reason,
+          raisedBy: data.raisedBy,
+          message: 'A dispute has been raised for your escrow'
+        });
+      } catch (error) {
+        console.error('Error handling escrow dispute event:', error);
+      }
+    });
+
+    // Enhanced milestone updates
     socket.on('milestoneUpdate', (data: { 
       escrowId: string; 
       milestoneId: string; 
@@ -122,18 +175,90 @@ export const initializeSocket = (io: Server) => {
       agentId: string; 
       type: string;
       status: string;
+      amount?: number;
+      milestoneTitle?: string;
     }) => {
       const notification = {
         type: data.type,
         escrowId: data.escrowId,
         milestoneId: data.milestoneId,
         status: data.status,
+        amount: data.amount,
+        milestoneTitle: data.milestoneTitle,
         timestamp: new Date()
       };
 
       // Notify both parties
       socket.to(`user_${data.clientId}`).emit('milestoneNotification', notification);
       socket.to(`user_${data.agentId}`).emit('milestoneNotification', notification);
+    });
+
+    // Handle milestone completion events
+    socket.on('milestone:completed', async (data) => {
+      try {
+        // Emit to client that milestone is completed and needs approval
+        io.to(`user_${data.clientId}`).emit('milestone:needs_approval', {
+          caseId: data.caseId,
+          milestoneId: data.milestoneId,
+          milestoneTitle: data.milestoneTitle,
+          amount: data.amount,
+          message: `Milestone "${data.milestoneTitle}" has been completed and needs your approval`
+        });
+      } catch (error) {
+        console.error('Error handling milestone completed event:', error);
+      }
+    });
+
+    socket.on('milestone:approved', async (data) => {
+      try {
+        // Emit to agent that milestone is approved and payment released
+        io.to(`user_${data.agentId}`).emit('milestone:payment_released', {
+          caseId: data.caseId,
+          milestoneId: data.milestoneId,
+          milestoneTitle: data.milestoneTitle,
+          amount: data.amount,
+          message: `Milestone "${data.milestoneTitle}" approved! $${data.amount} has been released to you`
+        });
+      } catch (error) {
+        console.error('Error handling milestone approved event:', error);
+      }
+    });
+
+    // Handle document upload events
+    socket.on('document:uploaded', async (data) => {
+      try {
+        // Emit to other party about new document
+        const otherPartyId = data.uploadedBy === data.clientId ? data.agentId : data.clientId;
+        io.to(`user_${otherPartyId}`).emit('document:new', {
+          caseId: data.caseId,
+          documentId: data.documentId,
+          documentName: data.documentName,
+          uploadedBy: data.uploadedBy,
+          message: `New document "${data.documentName}" has been uploaded to your case`
+        });
+      } catch (error) {
+        console.error('Error handling document upload event:', error);
+      }
+    });
+
+    // Handle case status updates
+    socket.on('case:status_update', async (data) => {
+      try {
+        // Emit to all case participants
+        const participants = [data.clientId, data.agentId];
+        participants.forEach(participantId => {
+          if (participantId !== socket.userId) {
+            io.to(`user_${participantId}`).emit('case:status_changed', {
+              caseId: data.caseId,
+              oldStatus: data.oldStatus,
+              newStatus: data.newStatus,
+              message: `Case status changed from ${data.oldStatus} to ${data.newStatus}`
+            });
+          }
+        });
+      } catch (error) {
+        console.error('Error handling case status update:', error);
+      }
     });
 
     // Handle review notifications
@@ -217,29 +342,146 @@ export const initializeSocket = (io: Server) => {
     socket.on('error', (error) => {
       console.error(`Socket error for user ${socket.userId}:`, error);
     });
-  });
 
-  // Helper function to send notification to specific user
-  const sendNotificationToUser = (userId: string, notification: any) => {
-    io.to(`user_${userId}`).emit('notification', notification);
-  };
-
-  // Helper function to send notification to multiple users
-  const sendNotificationToUsers = (userIds: string[], notification: any) => {
-    userIds.forEach(userId => {
-      io.to(`user_${userId}`).emit('notification', notification);
+    // Handle escrow events
+    socket.on('escrow:fund', async (data) => {
+      try {
+        // Emit to agent that escrow has been funded
+        io.to(`user_${data.agentId}`).emit('escrow:funded', {
+          escrowId: data.escrowId,
+          amount: data.amount,
+          clientId: socket.userId,
+          message: 'Escrow has been funded for your proposal'
+        });
+      } catch (error) {
+        console.error('Error handling escrow fund event:', error);
+      }
     });
-  };
 
-  // Helper function to broadcast to all users of a specific type
-  const broadcastToUserType = (userType: string, notification: any) => {
-    io.emit('notification', { ...notification, targetUserType: userType });
-  };
+    socket.on('escrow:release', async (data) => {
+      try {
+        // Emit to both parties about escrow release
+        io.to(`user_${data.agentId}`).emit('escrow:released', {
+          escrowId: data.escrowId,
+          amount: data.amount,
+          message: 'Escrow funds have been released to you'
+        });
+        
+        io.to(`user_${data.clientId}`).emit('escrow:released', {
+          escrowId: data.escrowId,
+          amount: data.amount,
+          message: 'Escrow funds have been released to agent'
+        });
+      } catch (error) {
+        console.error('Error handling escrow release event:', error);
+      }
+    });
 
-  // Export helper functions for use in other parts of the application
-  return {
-    sendNotificationToUser,
-    sendNotificationToUsers,
-    broadcastToUserType
-  };
+    socket.on('escrow:dispute', async (data) => {
+      try {
+        // Emit to other party about dispute
+        const otherPartyId = data.raisedBy === data.clientId ? data.agentId : data.clientId;
+        io.to(`user_${otherPartyId}`).emit('escrow:disputed', {
+          escrowId: data.escrowId,
+          reason: data.reason,
+          raisedBy: data.raisedBy,
+          message: 'A dispute has been raised for your escrow'
+        });
+      } catch (error) {
+        console.error('Error handling escrow dispute event:', error);
+      }
+    });
+
+    // Handle milestone events
+    socket.on('milestone:completed', async (data) => {
+      try {
+        // Emit to client that milestone is completed and needs approval
+        io.to(`user_${data.clientId}`).emit('milestone:needs_approval', {
+          caseId: data.caseId,
+          milestoneId: data.milestoneId,
+          milestoneTitle: data.milestoneTitle,
+          amount: data.amount,
+          message: `Milestone "${data.milestoneTitle}" has been completed and needs your approval`
+        });
+      } catch (error) {
+        console.error('Error handling milestone completed event:', error);
+      }
+    });
+
+    socket.on('milestone:approved', async (data) => {
+      try {
+        // Emit to agent that milestone is approved and payment released
+        io.to(`user_${data.agentId}`).emit('milestone:payment_released', {
+          caseId: data.caseId,
+          milestoneId: data.milestoneId,
+          milestoneTitle: data.milestoneTitle,
+          amount: data.amount,
+          message: `Milestone "${data.milestoneTitle}" approved! $${data.amount} has been released to you`
+        });
+      } catch (error) {
+        console.error('Error handling milestone approved event:', error);
+      }
+    });
+
+    // Handle document upload events
+    socket.on('document:uploaded', async (data) => {
+      try {
+        // Emit to other party about new document
+        const otherPartyId = data.uploadedBy === data.clientId ? data.agentId : data.clientId;
+        io.to(`user_${otherPartyId}`).emit('document:new', {
+          caseId: data.caseId,
+          documentId: data.documentId,
+          documentName: data.documentName,
+          uploadedBy: data.uploadedBy,
+          message: `New document "${data.documentName}" has been uploaded to your case`
+        });
+      } catch (error) {
+        console.error('Error handling document upload event:', error);
+      }
+    });
+
+    // Handle case status updates
+    socket.on('case:status_update', async (data) => {
+      try {
+        // Emit to all case participants
+        const participants = [data.clientId, data.agentId];
+        participants.forEach(participantId => {
+          if (participantId !== socket.userId) {
+            io.to(`user_${participantId}`).emit('case:status_changed', {
+              caseId: data.caseId,
+              oldStatus: data.oldStatus,
+              newStatus: data.newStatus,
+              message: `Case status changed from ${data.oldStatus} to ${data.newStatus}`
+            });
+          }
+        });
+      } catch (error) {
+        console.error('Error handling case status update:', error);
+      }
+    });
+
+    // Helper function to send notification to specific user
+    const sendNotificationToUser = (userId: string, notification: any) => {
+      io.to(`user_${userId}`).emit('notification', notification);
+    };
+
+    // Helper function to send notification to multiple users
+    const sendNotificationToUsers = (userIds: string[], notification: any) => {
+      userIds.forEach(userId => {
+        io.to(`user_${userId}`).emit('notification', notification);
+      });
+    };
+
+    // Helper function to broadcast to all users of a specific type
+    const broadcastToUserType = (userType: string, notification: any) => {
+      io.emit('notification', { ...notification, targetUserType: userType });
+    };
+
+    // Export helper functions for use in other parts of the application
+    return {
+      sendNotificationToUser,
+      sendNotificationToUsers,
+      broadcastToUserType
+    };
+  });
 };

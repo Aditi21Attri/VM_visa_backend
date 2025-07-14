@@ -655,4 +655,190 @@ router.post('/start-conversation', protect, [
   }
 });
 
+// @desc    Get or create conversation for a case/request
+// @route   POST /api/messages/conversation
+// @access  Private
+router.post('/conversation', protect, [
+  body('caseId').optional().isMongoId().withMessage('Valid case ID required'),
+  body('requestId').optional().isMongoId().withMessage('Valid request ID required'),
+  body('participantId').isMongoId().withMessage('Valid participant ID required')
+], async (req: any, res: Response) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        error: errors.array().map(err => err.msg).join(', ')
+      });
+    }
+
+    const { caseId, requestId, participantId } = req.body;
+
+    // Check if conversation already exists
+    let conversation = await Conversation.findOne({
+      participants: { $all: [req.user.id, participantId] },
+      ...(requestId && { requestId }),
+      isActive: true
+    }).populate('participantDetails', 'name avatar isVerified userType');
+
+    if (!conversation) {
+      // Create new conversation
+      conversation = new Conversation({
+        participants: [req.user.id, participantId],
+        requestId: requestId || null,
+        caseId: caseId || null,
+        lastMessage: '',
+        lastMessageAt: new Date(),
+        isActive: true
+      });
+      await conversation.save();
+      await conversation.populate('participantDetails', 'name avatar isVerified userType');
+    }
+
+    // Get recent messages for this conversation
+    const messages = await Message.find({ conversationId: conversation._id })
+      .populate('senderId', 'name avatar')
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean();
+
+    const response: ApiResponse = {
+      success: true,
+      data: {
+        conversation,
+        messages: messages.reverse() // Reverse to get chronological order
+      },
+      message: conversation.isNew ? 'New conversation created' : 'Conversation retrieved'
+    };
+
+    res.status(200).json(response);
+  } catch (error) {
+    console.error('Error getting/creating conversation:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error getting conversation'
+    });
+  }
+});
+
+// @desc    Get conversation by case ID
+// @route   GET /api/messages/case/:caseId
+// @access  Private
+router.get('/case/:caseId', protect, async (req: any, res: Response) => {
+  try {
+    const { caseId } = req.params;
+
+    // Find conversation for this case
+    const conversation = await Conversation.findOne({
+      caseId,
+      participants: req.user.id,
+      isActive: true
+    }).populate('participantDetails', 'name avatar isVerified userType');
+
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        error: 'Conversation not found for this case'
+      });
+    }
+
+    // Get messages for this conversation
+    const messages = await Message.find({ conversationId: conversation._id })
+      .populate('senderId', 'name avatar')
+      .sort({ createdAt: 1 })
+      .lean();
+
+    const response: ApiResponse = {
+      success: true,
+      data: {
+        conversation,
+        messages
+      }
+    };
+
+    res.status(200).json(response);
+  } catch (error) {
+    console.error('Error getting case conversation:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error getting case conversation'
+    });
+  }
+});
+
+// @desc    Send message to conversation
+// @route   POST /api/messages/send
+// @access  Private
+router.post('/send', protect, [
+  body('conversationId').isMongoId().withMessage('Valid conversation ID required'),
+  body('content').isString().isLength({ min: 1 }).withMessage('Message content is required'),
+  body('messageType').optional().isIn(['text', 'file', 'system']).withMessage('Invalid message type'),
+  body('attachments').optional().isArray().withMessage('Attachments must be an array')
+], async (req: any, res: Response) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        error: errors.array().map(err => err.msg).join(', ')
+      });
+    }
+
+    const { conversationId, content, messageType = 'text', attachments = [] } = req.body;
+
+    // Verify conversation exists and user is participant
+    const conversation = await Conversation.findOne({
+      _id: conversationId,
+      participants: req.user.id,
+      isActive: true
+    });
+
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        error: 'Conversation not found or access denied'
+      });
+    }
+
+    // Get the other participant
+    const receiverId = conversation.participants.find(p => p.toString() !== req.user.id);
+
+    // Create message
+    const message = new Message({
+      conversationId,
+      senderId: req.user.id,
+      receiverId,
+      content,
+      messageType,
+      attachments,
+      isRead: false
+    });
+
+    await message.save();
+    await message.populate('senderId', 'name avatar');
+
+    // Update conversation
+    conversation.lastMessage = content.substring(0, 100);
+    conversation.lastMessageAt = new Date();
+    await conversation.save();
+
+    // Send real-time notification via socket
+    // This would be handled by the socket handler
+
+    const response: ApiResponse = {
+      success: true,
+      data: message,
+      message: 'Message sent successfully'
+    };
+
+    res.status(201).json(response);
+  } catch (error) {
+    console.error('Error sending message:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error sending message'
+    });
+  }
+});
+
 export default router;

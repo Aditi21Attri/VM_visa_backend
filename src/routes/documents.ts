@@ -112,6 +112,228 @@ router.post('/upload', protect, upload.single('document'), [
   }
 });
 
+// @desc    Upload document with metadata
+// @route   POST /api/documents/upload
+// @access  Private
+router.post('/upload', protect, upload.single('file'), [
+  body('category').isIn(['passport', 'visa', 'education', 'employment', 'financial', 'other']).withMessage('Valid category is required'),
+  body('requestId').optional().isMongoId().withMessage('Valid request ID required'),
+  body('caseId').optional().isMongoId().withMessage('Valid case ID required'),
+  body('description').optional().isString().withMessage('Description must be a string')
+], async (req: any, res: Response) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      // Clean up uploaded file if validation fails
+      if (req.file) {
+        fs.unlinkSync(req.file.path);
+      }
+      return res.status(400).json({
+        success: false,
+        error: errors.array().map(err => err.msg).join(', ')
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: 'No file uploaded'
+      });
+    }
+
+    const { category, requestId, caseId, description } = req.body;
+
+    // Create document record
+    const document = new Document({
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      path: req.file.path,
+      uploadedBy: req.user.id,
+      relatedTo: {
+        type: caseId ? 'proposal' : requestId ? 'visa_request' : 'general',
+        id: caseId || requestId || req.user.id
+      },
+      category,
+      status: 'pending',
+      isPublic: false,
+      tags: [],
+      metadata: {
+        description: description || '',
+        uploadedAt: new Date()
+      }
+    });
+
+    await document.save();
+
+    // Send notification if uploaded for a case
+    if (caseId) {
+      const Case = require('../models/Case').default;
+      const caseDoc = await Case.findById(caseId).populate('clientId agentId', 'name email');
+      
+      if (caseDoc) {
+        // Add to case documents
+        caseDoc.documents.push({
+          name: document.originalName,
+          url: `/uploads/documents/${document.filename}`,
+          type: document.mimetype,
+          uploadedBy: req.user.id,
+          uploadedAt: new Date()
+        });
+        await caseDoc.save();
+
+        // Notify other party
+        const notificationService = require('../services/notificationService').default;
+        const otherPartyId = req.user.id === caseDoc.clientId.toString() ? 
+                           caseDoc.agentId : caseDoc.clientId;
+
+        await notificationService.createNotification({
+          recipient: otherPartyId.toString(),
+          sender: req.user.id,
+          type: 'document',
+          title: 'New Document Uploaded',
+          message: `A new document "${document.originalName}" has been uploaded to your case`,
+          data: { 
+            caseId, 
+            documentId: document._id,
+            documentName: document.originalName 
+          },
+          link: `/dashboard/cases/${caseId}`,
+          priority: 'medium',
+          category: 'info',
+          channels: ['in_app']
+        });
+      }
+    }
+
+    const response: ApiResponse = {
+      success: true,
+      data: document,
+      message: 'Document uploaded successfully'
+    };
+
+    res.status(201).json(response);
+  } catch (error) {
+    // Clean up uploaded file if database save fails
+    if (req.file) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (unlinkError) {
+        console.error('Error deleting file:', unlinkError);
+      }
+    }
+    
+    console.error('Error uploading document:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error uploading document'
+    });
+  }
+});
+
+// @desc    Upload multiple documents at once
+// @route   POST /api/documents/upload-multiple
+// @access  Private
+router.post('/upload-multiple', protect, upload.array('files', 10), [
+  body('category').isIn(['passport', 'visa', 'education', 'employment', 'financial', 'other']).withMessage('Valid category is required'),
+  body('requestId').optional().isMongoId().withMessage('Valid request ID required'),
+  body('caseId').optional().isMongoId().withMessage('Valid case ID required')
+], async (req: any, res: Response) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      // Clean up uploaded files if validation fails
+      if (req.files) {
+        req.files.forEach((file: any) => {
+          fs.unlinkSync(file.path);
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        error: errors.array().map(err => err.msg).join(', ')
+      });
+    }
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'No files uploaded'
+      });
+    }
+
+    const { category, requestId, caseId } = req.body;
+    const uploadedDocuments = [];
+
+    // Process each file
+    for (const file of req.files) {
+      const document = new Document({
+        filename: file.filename,
+        originalName: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size,
+        path: file.path,
+        uploadedBy: req.user.id,
+        relatedTo: {
+          type: caseId ? 'proposal' : requestId ? 'visa_request' : 'general',
+          id: caseId || requestId || req.user.id
+        },
+        category,
+        status: 'pending',
+        isPublic: false,
+        tags: []
+      });
+
+      await document.save();
+      uploadedDocuments.push(document);
+    }
+
+    // Update case if caseId provided
+    if (caseId) {
+      const Case = require('../models/Case').default;
+      const caseDoc = await Case.findById(caseId);
+      
+      if (caseDoc) {
+        uploadedDocuments.forEach(doc => {
+          caseDoc.documents.push({
+            name: doc.originalName,
+            url: `/uploads/documents/${doc.filename}`,
+            type: doc.mimetype,
+            uploadedBy: req.user.id,
+            uploadedAt: new Date()
+          });
+        });
+        await caseDoc.save();
+      }
+    }
+
+    const response: ApiResponse = {
+      success: true,
+      data: uploadedDocuments,
+      message: `${uploadedDocuments.length} documents uploaded successfully`
+    };
+
+    res.status(201).json(response);
+  } catch (error) {
+    // Clean up uploaded files if database save fails
+    if (req.files) {
+      req.files.forEach((file: any) => {
+        try {
+          fs.unlinkSync(file.path);
+        } catch (unlinkError) {
+          console.error('Error deleting file:', unlinkError);
+        }
+      });
+    }
+    
+    console.error('Error uploading documents:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error uploading documents'
+    });
+  }
+});
+
 // @desc    Get user's documents
 // @route   GET /api/documents/my-documents
 // @access  Private

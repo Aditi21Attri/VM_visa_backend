@@ -527,6 +527,7 @@ router.put('/:id', protect, [
 // @access  Private (Request owner only)
 router.put('/:id/accept', protect, authorize('client'), async (req: any, res: Response) => {
   try {
+    console.log('🚀🚀🚀 ACCEPT PROPOSAL ROUTE STARTED - FRESH DEBUG SESSION 🚀🚀🚀');
     console.log('=== ACCEPT PROPOSAL DEBUG ===');
     console.log('Proposal ID:', req.params.id);
     console.log('User ID:', req.user._id);
@@ -543,6 +544,11 @@ router.put('/:id/accept', protect, authorize('client'), async (req: any, res: Re
     }
 
     console.log('Proposal found:', { requestId: proposal.requestId, status: proposal.status });
+    console.log('=== PROPOSAL FIELD DEBUG ===');
+    console.log('Proposal budget:', proposal.budget);
+    console.log('Proposal budget type:', typeof proposal.budget);
+    console.log('All proposal fields:', Object.keys(proposal.toObject()));
+    console.log('Full proposal data:', proposal.toObject());
 
     // Get the visa request separately
     const visaRequest = await VisaRequest.findById(proposal.requestId);
@@ -558,7 +564,17 @@ router.put('/:id/accept', protect, authorize('client'), async (req: any, res: Re
     console.log('Visa request found:', { userId: visaRequest.userId, status: visaRequest.status });
 
     // Check if user owns the request
-    if (visaRequest.userId !== req.user._id) {
+    console.log('Authorization check:', { 
+      visaRequestUserId: visaRequest.userId, 
+      visaRequestUserIdType: typeof visaRequest.userId,
+      currentUserId: req.user._id,
+      currentUserIdType: typeof req.user._id,
+      visaRequestUserIdString: visaRequest.userId.toString(),
+      currentUserIdString: req.user._id.toString(),
+      areEqual: visaRequest.userId.toString() === req.user._id.toString()
+    });
+    
+    if (visaRequest.userId.toString() !== req.user._id.toString()) {
       console.log('User not authorized:', { visaRequestUserId: visaRequest.userId, currentUserId: req.user._id });
       const response: ApiResponse = {
         success: false,
@@ -588,12 +604,26 @@ router.put('/:id/accept', protect, authorize('client'), async (req: any, res: Re
     }
 
     console.log('All checks passed, accepting proposal...');
+    console.log('About to debug proposal object...');
+
+    // Debug proposal object before transaction
+    console.log('=== PROPOSAL OBJECT BEFORE TRANSACTION ===');
+    console.log('Proposal ID:', proposal._id);
+    console.log('Proposal budget field exists:', 'budget' in proposal);
+    console.log('Proposal budget value:', proposal.budget);
+    try {
+      console.log('Proposal keys:', Object.keys(proposal.toObject()));
+    } catch (e) {
+      console.log('Proposal keys (fallback):', Object.keys(proposal));
+    }
 
     // Start a MongoDB session for transaction
     const session = await mongoose.startSession();
+    console.log('MongoDB session created successfully');
     
     try {
       await session.withTransaction(async () => {
+        console.log('Inside withTransaction block...');
         // Accept the proposal
         proposal.status = 'accepted';
         proposal.respondedAt = new Date();
@@ -620,17 +650,30 @@ router.put('/:id/accept', protect, authorize('client'), async (req: any, res: Re
 
         // Create active case record
         const Case = mongoose.model('Case');
+        
+        // Debug proposal data
+        console.log('=== CASE CREATION DEBUG ===');
+        console.log('Proposal budget:', proposal.budget);
+        console.log('Proposal budget type:', typeof proposal.budget);
+        console.log('Proposal budget || 0:', proposal.budget || 0);
+        console.log('Full proposal object:', JSON.stringify(proposal, null, 2));
+        
+        const totalAmount = proposal.budget || 1500; // Temporary hardcoded fallback for testing
+        console.log('Total amount for case:', totalAmount, 'type:', typeof totalAmount);
+        
         const activeCase = new Case({
           requestId: proposal.requestId,
           proposalId: proposal._id,
           clientId: visaRequest.userId,
           agentId: proposal.agentId,
           status: 'active',
+          totalAmount: totalAmount,
           milestones: proposal.milestones.map((milestone, index) => ({
             ...milestone,
             order: index + 1,
             status: 'pending',
-            isActive: index === 0 // First milestone is active
+            isActive: index === 0, // First milestone is active
+            dueDate: milestone.dueDate || new Date(Date.now() + (index + 1) * 30 * 24 * 60 * 60 * 1000) // Default to 30 days per milestone
           })),
           startDate: new Date(),
           estimatedCompletionDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000) // 90 days from now
@@ -642,7 +685,7 @@ router.put('/:id/accept', protect, authorize('client'), async (req: any, res: Re
         
         // Notification for the winning agent
         await new Notification({
-          userId: proposal.agentId,
+          recipient: proposal.agentId,
           title: 'Proposal Accepted!',
           message: `Your proposal for "${visaRequest.title}" has been accepted. You can now start working on this case.`,
           type: 'proposal',
@@ -656,7 +699,7 @@ router.put('/:id/accept', protect, authorize('client'), async (req: any, res: Re
 
         // Notification for the client
         await new Notification({
-          userId: visaRequest.userId,
+          recipient: visaRequest.userId,
           title: 'Proposal Accepted',
           message: `You have successfully accepted a proposal. Your case is now in progress.`,
           type: 'proposal',
@@ -679,7 +722,7 @@ router.put('/:id/accept', protect, authorize('client'), async (req: any, res: Re
         // Notifications for rejected agents
         for (const rejectedProposal of rejectedProposals) {
           await new Notification({
-            userId: rejectedProposal.agentId,
+            recipient: rejectedProposal.agentId,
             title: 'Proposal Not Selected',
             message: `The client has selected another proposal for "${visaRequest.title}". Keep applying to more requests!`,
             type: 'proposal',
@@ -708,10 +751,15 @@ router.put('/:id/accept', protect, authorize('client'), async (req: any, res: Re
       const response: ApiResponse = {
         success: true,
         data: {
-          ...updatedProposal.toObject(),
+          proposal: updatedProposal.toObject(),
           agent,
           request: visaRequest,
-          case: activeCase
+          case: activeCase,
+          navigation: {
+            redirectTo: '/dashboard/cases',
+            caseId: activeCase._id,
+            message: 'Your request has been converted to an active case. You can now track progress!'
+          }
         },
         message: 'Proposal accepted successfully. Case is now active.'
       };

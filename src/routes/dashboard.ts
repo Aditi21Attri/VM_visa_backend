@@ -1,6 +1,10 @@
 import express, { Request, Response } from 'express';
 import { protect } from '../middleware/auth';
 import { ApiResponse, UserDashboardStats, AgentDashboardStats } from '../types';
+import Notification from '../models/Notification';
+import Case from '../models/Case';
+import VisaRequest from '../models/VisaRequest';
+import { Message } from '../models/Message';
 
 const router = express.Router();
 
@@ -23,6 +27,8 @@ router.get('/stats', protect, async (req: any, res: Response) => {
         activeRequests,
         completedRequests,
         cancelledRequests,
+        activeCases,
+        completedCases,
         sentMessages,
         receivedMessages
       ] = await Promise.all([
@@ -39,6 +45,8 @@ router.get('/stats', protect, async (req: any, res: Response) => {
           userId: req.user.id, 
           status: 'cancelled' 
         }),
+        Case.countDocuments({ clientId: req.user.id, status: { $in: ['active', 'in-progress'] } }),
+        Case.countDocuments({ clientId: req.user.id, status: 'completed' }),
         Message.countDocuments({ senderId: req.user.id }),
         Message.countDocuments({ receiverId: req.user.id })
       ]);
@@ -56,6 +64,8 @@ router.get('/stats', protect, async (req: any, res: Response) => {
         activeRequests,
         completedRequests,
         cancelledRequests,
+        activeCases,
+        completedCases,
         completionRate: totalRequests > 0 ? ((completedRequests / totalRequests) * 100).toFixed(1) : 0,
         communication: {
           sentMessages,
@@ -253,38 +263,37 @@ router.get('/activity', protect, async (req: any, res: Response) => {
 // @access  Private
 router.get('/notifications', protect, async (req: any, res: Response) => {
   try {
-    // Placeholder for notifications
-    // In a real app, you'd have a notifications model
-    const notifications = [
-      {
-        id: '1',
-        type: 'proposal',
-        title: 'New Proposal Received',
-        message: 'You have received a new proposal for your visa request',
-        isRead: false,
-        createdAt: new Date(Date.now() - 3600000) // 1 hour ago
-      },
-      {
-        id: '2',
-        type: 'message',
-        title: 'New Message',
-        message: 'You have a new message from an agent',
-        isRead: false,
-        createdAt: new Date(Date.now() - 7200000) // 2 hours ago
-      },
-      {
-        id: '3',
-        type: 'system',
-        title: 'Account Verified',
-        message: 'Your account has been successfully verified',
-        isRead: true,
-        createdAt: new Date(Date.now() - 86400000) // 1 day ago
-      }
-    ];
+    const { page = 1, limit = 20, isRead } = req.query;
+    const pageNum = parseInt(page.toString());
+    const limitNum = parseInt(limit.toString());
+    const skip = (pageNum - 1) * limitNum;
+
+    const query: any = { recipient: req.user.id };
+    if (isRead !== undefined) {
+      query.isRead = isRead === 'true';
+    }
+
+    const [notifications, total] = await Promise.all([
+      Notification.find(query)
+        .populate('sender', 'name avatar')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      Notification.countDocuments(query)
+    ]);
 
     const response: ApiResponse = {
       success: true,
-      data: notifications
+      data: {
+        notifications,
+        pagination: {
+          current: pageNum,
+          pages: Math.ceil(total / limitNum),
+          total,
+          limit: limitNum
+        }
+      }
     };
 
     res.status(200).json(response);
@@ -295,6 +304,123 @@ router.get('/notifications', protect, async (req: any, res: Response) => {
       error: 'Error fetching notifications'
     };
     res.status(500).json(response);
+  }
+});
+
+// @desc    Mark notification as read
+// @route   PUT /api/dashboard/notifications/:id/read
+// @access  Private
+router.put('/notifications/:id/read', protect, async (req: any, res: Response) => {
+  try {
+    const notification = await Notification.findOneAndUpdate(
+      { _id: req.params.id, recipient: req.user.id },
+      { isRead: true, readAt: new Date() },
+      { new: true }
+    );
+
+    if (!notification) {
+      return res.status(404).json({
+        success: false,
+        error: 'Notification not found'
+      });
+    }
+
+    const response: ApiResponse = {
+      success: true,
+      data: notification,
+      message: 'Notification marked as read'
+    };
+
+    res.status(200).json(response);
+  } catch (error) {
+    console.error('Mark notification as read error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error marking notification as read'
+    });
+  }
+});
+
+// @desc    Mark all notifications as read
+// @route   PUT /api/dashboard/notifications/read-all
+// @access  Private
+router.put('/notifications/read-all', protect, async (req: any, res: Response) => {
+  try {
+    const result = await Notification.updateMany(
+      { recipient: req.user.id, isRead: false },
+      { isRead: true, readAt: new Date() }
+    );
+
+    const response: ApiResponse = {
+      success: true,
+      data: { modifiedCount: result.modifiedCount },
+      message: `${result.modifiedCount} notifications marked as read`
+    };
+
+    res.status(200).json(response);
+  } catch (error) {
+    console.error('Mark all notifications as read error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error marking notifications as read'
+    });
+  }
+});
+
+// @desc    Delete notification
+// @route   DELETE /api/dashboard/notifications/:id
+// @access  Private
+router.delete('/notifications/:id', protect, async (req: any, res: Response) => {
+  try {
+    const notification = await Notification.findOneAndDelete({
+      _id: req.params.id,
+      recipient: req.user.id
+    });
+
+    if (!notification) {
+      return res.status(404).json({
+        success: false,
+        error: 'Notification not found'
+      });
+    }
+
+    const response: ApiResponse = {
+      success: true,
+      message: 'Notification deleted successfully'
+    };
+
+    res.status(200).json(response);
+  } catch (error) {
+    console.error('Delete notification error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error deleting notification'
+    });
+  }
+});
+
+// @desc    Get unread notifications count
+// @route   GET /api/dashboard/notifications/unread-count
+// @access  Private
+router.get('/notifications/unread-count', protect, async (req: any, res: Response) => {
+  try {
+    const count = await Notification.countDocuments({
+      recipient: req.user.id,
+      isRead: false
+    });
+
+    const response: ApiResponse = {
+      success: true,
+      data: { count }
+    };
+
+    res.status(200).json(response);
+  } catch (error) {
+    console.error('Get unread count error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error getting unread notifications count'
+    });
   }
 });
 
