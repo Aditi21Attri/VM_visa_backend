@@ -279,10 +279,26 @@ router.put('/:id/milestones/:milestoneIndex/approve', protect, authorize('client
     }
 
     // Check if client owns this case
-    if (caseItem.clientId !== req.user._id) {
+    console.log('🔍 Client ownership check:', {
+      caseClientId: caseItem.clientId,
+      caseClientIdType: typeof caseItem.clientId,
+      reqUserId: req.user._id,
+      reqUserIdType: typeof req.user._id,
+      areEqual: caseItem.clientId.toString() === req.user._id.toString(),
+      caseAgentId: caseItem.agentId,
+      caseStatus: caseItem.status
+    });
+    
+    if (caseItem.clientId.toString() !== req.user._id.toString()) {
+      console.log('❌ Access denied - client does not own case');
+      console.log('🔍 Case ownership details:', {
+        expectedClientId: req.user._id.toString(),
+        actualClientId: caseItem.clientId.toString(),
+        caseId: caseItem._id.toString()
+      });
       return res.status(403).json({
         success: false,
-        error: 'Access denied'
+        error: 'Access denied - You can only approve milestones for your own cases'
       });
     }
 
@@ -343,10 +359,18 @@ router.put('/:id/milestones/:milestoneIndex/approve', protect, authorize('client
     // Create notification for agent
     const Notification = mongoose.model('Notification');
     await new Notification({
-      userId: caseItem.agentId,
+      recipient: caseItem.agentId,
+      sender: req.user._id,
       title: 'Milestone Approved',
       message: `Client has approved milestone "${milestone.title}"${allApproved ? ' - Case completed!' : ''}`,
-      type: 'milestone',
+      type: 'status_update',
+      priority: 'medium',
+      category: 'success',
+      channels: ['in_app'],
+      emailSent: false,
+      smsSent: false,
+      pushSent: false,
+      isRead: false,
       data: {
         caseId: caseItem._id,
         milestoneIndex,
@@ -897,123 +921,125 @@ router.post('/:id/dispute', protect, [
   }
 });
 
-// @desc    Update case milestones (Agent only)
+// @desc    Update case milestones
 // @route   PUT /api/cases/:id/milestones
 // @access  Private (Agent only)
-router.put('/:id/milestones', protect, authorize('agent'), [
-  body('milestones').isArray({ min: 1 }).withMessage('At least one milestone is required'),
-  body('milestones.*.title').trim().isLength({ min: 3, max: 100 }).withMessage('Milestone title must be between 3 and 100 characters'),
-  body('milestones.*.description').trim().isLength({ min: 10, max: 500 }).withMessage('Milestone description must be between 10 and 500 characters'),
-  body('milestones.*.amount').isNumeric().isFloat({ min: 0 }).withMessage('Milestone amount must be positive'),
-  body('milestones.*.dueDate').isISO8601().withMessage('Invalid due date format'),
-  body('milestones.*.order').isInt({ min: 1 }).withMessage('Milestone order must be a positive integer')
-], async (req: any, res: Response) => {
+router.put('/:id/milestones', protect, authorize('agent'), async (req: any, res: Response) => {
   try {
-    console.log('🎯 UPDATING MILESTONES - Agent:', req.user._id);
-    console.log('Case ID:', req.params.id);
-    console.log('New milestones:', JSON.stringify(req.body.milestones, null, 2));
+    const { milestones } = req.body;
+    const caseId = req.params.id;
 
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      const response: ApiResponse = {
+    console.log('🔍 Update milestones request:', {
+      caseId,
+      milestonesCount: milestones?.length,
+      firstMilestone: milestones?.[0]
+    });
+
+    // Validate input
+    if (!milestones || !Array.isArray(milestones)) {
+      return res.status(400).json({
         success: false,
-        error: errors.array().map(err => err.msg).join(', ')
-      };
-      return res.status(400).json(response);
+        error: 'Milestones array is required'
+      });
     }
 
-    const caseData = await Case.findById(req.params.id);
-    
-    if (!caseData) {
-      const response: ApiResponse = {
+    // Find the case
+    const caseItem = await Case.findById(caseId);
+    if (!caseItem) {
+      return res.status(404).json({
         success: false,
         error: 'Case not found'
-      };
-      return res.status(404).json(response);
+      });
     }
 
     // Check if agent owns this case
-    if (caseData.agentId.toString() !== req.user._id.toString()) {
-      const response: ApiResponse = {
+    if (caseItem.agentId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
         success: false,
-        error: 'Not authorized to update this case'
-      };
-      return res.status(403).json(response);
+        error: 'Access denied - You can only update your own cases'
+      });
     }
 
-    // Validate total amount equals sum of milestone amounts
-    const { milestones } = req.body;
-    const totalMilestoneAmount = milestones.reduce((sum: number, milestone: any) => sum + milestone.amount, 0);
-    
-    if (Math.abs(totalMilestoneAmount - caseData.totalAmount) > 0.01) {
-      const response: ApiResponse = {
-        success: false,
-        error: `Sum of milestone amounts (${totalMilestoneAmount}) must equal the total case amount (${caseData.totalAmount})`
-      };
-      return res.status(400).json(response);
-    }
-
-    // Preserve existing milestone statuses and data for milestones that haven't changed
-    const updatedMilestones = milestones.map((newMilestone: any, index: number) => {
-      const existingMilestone = caseData.milestones[index];
+    // Validate milestones structure
+    for (let i = 0; i < milestones.length; i++) {
+      const milestone = milestones[i];
+      console.log(`🔍 Validating milestone ${i + 1}:`, milestone);
       
-      return {
-        ...newMilestone,
-        status: existingMilestone?.status || 'pending',
-        isActive: index === 0 && (!existingMilestone || existingMilestone.status === 'pending'), // First pending milestone is active
-        startedAt: existingMilestone?.startedAt || null,
-        completedAt: existingMilestone?.completedAt || null,
-        approvedAt: existingMilestone?.approvedAt || null,
-        submittedFiles: existingMilestone?.submittedFiles || [],
-        clientFeedback: existingMilestone?.clientFeedback || '',
-        agentNotes: existingMilestone?.agentNotes || '',
-        deliverables: newMilestone.deliverables || []
-      };
-    });
-
-    // Update milestones
-    caseData.milestones = updatedMilestones;
-    
-    // Add timeline entry
-    caseData.timeline.push({
-      action: 'milestones_updated',
-      description: 'Agent updated case milestones',
-      performedBy: req.user._id,
-      performedAt: new Date(),
-      data: { milestoneCount: milestones.length }
-    });
-
-    await caseData.save();
-
-    // Create notification for client
-    const Notification = mongoose.model('Notification');
-    await new Notification({
-      recipient: caseData.clientId,
-      title: 'Case Milestones Updated',
-      message: 'Your agent has updated the milestones for your case. Please review the changes.',
-      type: 'status_update',
-      data: {
-        caseId: caseData._id,
-        action: 'milestones_updated'
+      if (!milestone.title || typeof milestone.title !== 'string') {
+        console.log(`❌ Milestone ${i + 1} validation failed: missing title`);
+        return res.status(400).json({
+          success: false,
+          error: `Milestone ${i + 1}: Title is required`
+        });
       }
-    }).save();
+      if (!milestone.description || typeof milestone.description !== 'string') {
+        console.log(`❌ Milestone ${i + 1} validation failed: missing description`);
+        return res.status(400).json({
+          success: false,
+          error: `Milestone ${i + 1}: Description is required`
+        });
+      }
+      if (!milestone.amount || typeof milestone.amount !== 'number' || milestone.amount <= 0) {
+        console.log(`❌ Milestone ${i + 1} validation failed: invalid amount`, milestone.amount);
+        return res.status(400).json({
+          success: false,
+          error: `Milestone ${i + 1}: Valid amount is required`
+        });
+      }
+      if (!milestone.expectedDate && !milestone.dueDate) {
+        console.log(`❌ Milestone ${i + 1} validation failed: missing date`);
+        return res.status(400).json({
+          success: false,
+          error: `Milestone ${i + 1}: Expected date or due date is required`
+        });
+      }
+    }
 
-    console.log('✅ Milestones updated successfully');
+    // Update the case with new milestones
+    console.log('✅ Validation passed, updating case milestones');
+    caseItem.milestones = milestones.map((milestone, index) => ({
+      title: milestone.title,
+      description: milestone.description,
+      amount: milestone.amount,
+      dueDate: new Date(milestone.expectedDate || milestone.dueDate),
+      status: milestone.status || 'pending',
+      isActive: index === 0 && (!milestone.status || milestone.status === 'pending'), // First pending milestone is active
+      order: index + 1, // Order should start from 1
+      deliverables: milestone.deliverables || [],
+      submittedFiles: milestone.submittedFiles || [],
+      agentNotes: milestone.agentNotes || '',
+      startedAt: milestone.startedAt ? new Date(milestone.startedAt) : undefined,
+      completedAt: milestone.status === 'completed' ? (milestone.completedAt ? new Date(milestone.completedAt) : new Date()) : undefined,
+      approvedAt: milestone.status === 'approved' ? (milestone.approvedAt ? new Date(milestone.approvedAt) : new Date()) : undefined,
+      clientFeedback: milestone.clientFeedback || ''
+    }));
+
+    caseItem.lastActivity = new Date();
+    await caseItem.save();
+    console.log('✅ Case milestones updated successfully');
+
+    // Populate related data
+    await caseItem.populate([
+      { path: 'clientId', select: 'name email avatar' },
+      { path: 'agentId', select: 'name email avatar isVerified' },
+      { path: 'requestId', select: 'title visaType country priority' },
+      { path: 'proposalId', select: 'budget timeline' }
+    ]);
 
     const response: ApiResponse = {
       success: true,
-      data: caseData,
-      message: 'Milestones updated successfully'
+      data: caseItem
     };
 
     res.status(200).json(response);
   } catch (error) {
-    console.error('Update milestones error:', error);
-    const response: ApiResponse = {
+    console.error('❌ Error updating case milestones:', error);
+    console.error('❌ Error stack:', error.stack);
+    res.status(500).json({
       success: false,
-      error: 'Error updating milestones'
-    };
-    res.status(500).json(response);
+      error: 'Error updating milestones',
+      details: error.message
+    });
   }
 });
 
