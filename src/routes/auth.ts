@@ -266,25 +266,50 @@ router.put('/profile', protect, [
       emergencyContact,
       notificationSettings,
       privacySettings,
-      appPreferences
+      appPreferences,
+      // Agent-specific fields
+      title,
+      website,
+      experienceYears,
+      specializations,
+      languages,
+      hourlyRate,
+      licenseNumber,
+      certifications,
+      responseTime,
+      minimumBudget,
+      consultationFee
     } = req.body;
     
     const updateData: any = {};
-    if (name) updateData.name = name;
-    if (bio) updateData.bio = bio;
-    if (location) updateData.location = location;
-    if (phone) updateData.phone = phone;
-    if (avatar) updateData.avatar = avatar;
-    if (email) updateData.email = email;
-    if (dateOfBirth) updateData.dateOfBirth = dateOfBirth;
-    if (nationality) updateData.nationality = nationality;
-    if (passportNumber) updateData.passportNumber = passportNumber;
-    if (visaHistory) updateData.visaHistory = visaHistory;
-    if (preferredCountries) updateData.preferredCountries = preferredCountries;
-    if (emergencyContact) updateData.emergencyContact = emergencyContact;
-    if (notificationSettings) updateData.notificationSettings = notificationSettings;
-    if (privacySettings) updateData.privacySettings = privacySettings;
-    if (appPreferences) updateData.appPreferences = appPreferences;
+    if (name !== undefined) updateData.name = name;
+    if (bio !== undefined) updateData.bio = bio;
+    if (location !== undefined) updateData.location = location;
+    if (phone !== undefined) updateData.phone = phone;
+    if (avatar !== undefined) updateData.avatar = avatar;
+    if (email !== undefined) updateData.email = email;
+    if (dateOfBirth !== undefined) updateData.dateOfBirth = dateOfBirth;
+    if (nationality !== undefined) updateData.nationality = nationality;
+    if (passportNumber !== undefined) updateData.passportNumber = passportNumber;
+    if (visaHistory !== undefined) updateData.visaHistory = visaHistory;
+    if (preferredCountries !== undefined) updateData.preferredCountries = preferredCountries;
+    if (emergencyContact !== undefined) updateData.emergencyContact = emergencyContact;
+    if (notificationSettings !== undefined) updateData.notificationSettings = notificationSettings;
+    if (privacySettings !== undefined) updateData.privacySettings = privacySettings;
+    if (appPreferences !== undefined) updateData.appPreferences = appPreferences;
+    
+    // Agent-specific fields
+    if (title !== undefined) updateData.title = title;
+    if (website !== undefined) updateData.website = website;
+    if (experienceYears !== undefined) updateData.experienceYears = experienceYears;
+    if (specializations !== undefined) updateData.specializations = specializations;
+    if (languages !== undefined) updateData.languages = languages;
+    if (hourlyRate !== undefined) updateData.hourlyRate = hourlyRate;
+    if (licenseNumber !== undefined) updateData.licenseNumber = licenseNumber;
+    if (certifications !== undefined) updateData.certifications = certifications;
+    if (responseTime !== undefined) updateData.responseTime = responseTime;
+    if (minimumBudget !== undefined) updateData.minimumBudget = minimumBudget;
+    if (consultationFee !== undefined) updateData.consultationFee = consultationFee;
 
     console.log('Updating user profile:', { userId: req.user.id, updateData: { ...updateData, password: updateData.password ? '[REDACTED]' : undefined } });
 
