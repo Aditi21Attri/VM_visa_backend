@@ -516,3 +516,50 @@ export interface ReviewQueryParams extends QueryParams {
   minRating?: number;
   maxRating?: number;
 }
+
+// Calendar Event types
+export interface ICalendarEvent extends Document {
+  _id: string;
+  title: string;
+  description?: string;
+  startDate: Date;
+  endDate: Date;
+  type: 'consultation' | 'document-review' | 'follow-up' | 'deadline' | 'other';
+  status: 'scheduled' | 'confirmed' | 'completed' | 'cancelled' | 'rescheduled';
+  organizer: string | IUser;
+  participants: Array<{
+    user: string | IUser;
+    status: 'invited' | 'accepted' | 'declined' | 'tentative';
+    notified: boolean;
+  }>;
+  location: {
+    type: 'video-call' | 'phone' | 'in-person' | 'online';
+    details?: string;
+  };
+  relatedTo?: {
+    type: 'case' | 'proposal' | 'visa-request' | 'general';
+    id: string;
+  };
+  reminderSettings: {
+    enabled: boolean;
+    intervals: Array<'15min' | '30min' | '1hour' | '2hours' | '1day' | '1week'>;
+  };
+  recurring: {
+    enabled: boolean;
+    pattern?: 'daily' | 'weekly' | 'monthly' | 'yearly';
+    endDate?: Date;
+    exceptions?: Date[];
+  };
+  meetingLink?: string;
+  agenda?: Array<{
+    item: string;
+    duration: number;
+    completed: boolean;
+  }>;
+  notes?: string;
+  attachments?: string[];
+  isPrivate: boolean;
+  color: string;
+  createdAt: Date;
+  updatedAt: Date;
+}

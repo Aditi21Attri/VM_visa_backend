@@ -234,7 +234,12 @@ router.put('/profile', protect, [
   body('name').optional().trim().isLength({ min: 2, max: 50 }).withMessage('Name must be between 2 and 50 characters'),
   body('bio').optional().isLength({ max: 500 }).withMessage('Bio cannot exceed 500 characters'),
   body('location').optional().isLength({ max: 100 }).withMessage('Location cannot exceed 100 characters'),
-  body('phone').optional().matches(/^\+?[\d\s\-\(\)]+$/).withMessage('Please provide a valid phone number')
+  body('phone').optional().matches(/^\+?[\d\s\-\(\)]+$/).withMessage('Please provide a valid phone number'),
+  body('email').optional().isEmail().withMessage('Please provide a valid email address'),
+  body('dateOfBirth').optional().isISO8601().withMessage('Please provide a valid date'),
+  body('nationality').optional().isLength({ max: 50 }).withMessage('Nationality cannot exceed 50 characters'),
+  body('passportNumber').optional().isLength({ max: 20 }).withMessage('Passport number cannot exceed 20 characters'),
+  body('visaHistory').optional().isLength({ max: 1000 }).withMessage('Visa history cannot exceed 1000 characters')
 ], async (req: any, res: Response) => {
   try {
     const errors = validationResult(req);
@@ -246,7 +251,23 @@ router.put('/profile', protect, [
       return res.status(400).json(response);
     }
 
-    const { name, bio, location, phone, avatar } = req.body;
+    const { 
+      name, 
+      bio, 
+      location, 
+      phone, 
+      avatar, 
+      email,
+      dateOfBirth,
+      nationality,
+      passportNumber,
+      visaHistory,
+      preferredCountries,
+      emergencyContact,
+      notificationSettings,
+      privacySettings,
+      appPreferences
+    } = req.body;
     
     const updateData: any = {};
     if (name) updateData.name = name;
@@ -254,16 +275,38 @@ router.put('/profile', protect, [
     if (location) updateData.location = location;
     if (phone) updateData.phone = phone;
     if (avatar) updateData.avatar = avatar;
+    if (email) updateData.email = email;
+    if (dateOfBirth) updateData.dateOfBirth = dateOfBirth;
+    if (nationality) updateData.nationality = nationality;
+    if (passportNumber) updateData.passportNumber = passportNumber;
+    if (visaHistory) updateData.visaHistory = visaHistory;
+    if (preferredCountries) updateData.preferredCountries = preferredCountries;
+    if (emergencyContact) updateData.emergencyContact = emergencyContact;
+    if (notificationSettings) updateData.notificationSettings = notificationSettings;
+    if (privacySettings) updateData.privacySettings = privacySettings;
+    if (appPreferences) updateData.appPreferences = appPreferences;
+
+    console.log('Updating user profile:', { userId: req.user.id, updateData: { ...updateData, password: updateData.password ? '[REDACTED]' : undefined } });
 
     const user = await User.findByIdAndUpdate(
       req.user.id,
       updateData,
       { new: true, runValidators: true }
-    );
+    ).select('-password');
+
+    if (!user) {
+      const response: ApiResponse = {
+        success: false,
+        error: 'User not found'
+      };
+      return res.status(404).json(response);
+    }
+
+    console.log('Profile updated successfully for user:', user.email);
 
     const response: ApiResponse = {
       success: true,
-      data: { user },
+      data: user,
       message: 'Profile updated successfully'
     };
 

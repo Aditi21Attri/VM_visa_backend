@@ -21,21 +21,12 @@ router.get('/stats', protect, async (req: any, res: Response) => {
     let stats: any = {};
 
     if (req.user.userType === 'client') {
-      // Client dashboard stats
-      const [
-        totalRequests,
-        activeRequests,
-        completedRequests,
-        cancelledRequests,
-        activeCases,
-        completedCases,
-        sentMessages,
-        receivedMessages
-      ] = await Promise.all([
+      // Client dashboard stats with real-time active applications
+      const visaRequestStats = await Promise.all([
         VisaRequest.countDocuments({ userId: req.user.id }),
         VisaRequest.countDocuments({ 
           userId: req.user.id, 
-          status: { $in: ['pending', 'in-progress'] } 
+          status: { $in: ['open', 'in_progress'] } 
         }),
         VisaRequest.countDocuments({ 
           userId: req.user.id, 
@@ -44,34 +35,73 @@ router.get('/stats', protect, async (req: any, res: Response) => {
         VisaRequest.countDocuments({ 
           userId: req.user.id, 
           status: 'cancelled' 
-        }),
+        })
+      ]);
+
+      const userVisaRequestIds = await VisaRequest.find({ userId: req.user.id }).select('_id');
+      
+      const [
+        activeCases,
+        completedCases,
+        sentMessages,
+        receivedMessages,
+        proposalsReceived,
+        pendingProposals,
+        acceptedProposals
+      ] = await Promise.all([
         Case.countDocuments({ clientId: req.user.id, status: { $in: ['active', 'in-progress'] } }),
         Case.countDocuments({ clientId: req.user.id, status: 'completed' }),
         Message.countDocuments({ senderId: req.user.id }),
-        Message.countDocuments({ receiverId: req.user.id })
+        Message.countDocuments({ receiverId: req.user.id }),
+        Proposal.countDocuments({ 
+          requestId: { $in: userVisaRequestIds } 
+        }),
+        Proposal.countDocuments({ 
+          requestId: { $in: userVisaRequestIds },
+          status: 'pending'
+        }),
+        Proposal.countDocuments({ 
+          requestId: { $in: userVisaRequestIds },
+          status: 'accepted'
+        })
       ]);
 
-      // Get recent requests
-      const recentRequests = await VisaRequest.find({ userId: req.user.id })
-        .select('title visaType country status createdAt proposalCount')
-        .sort({ createdAt: -1 })
-        .limit(5)
-        .lean();
+      // Get recent activity (last 30 days)
+      const recentActivity = await Promise.all([
+        VisaRequest.find({ 
+          userId: req.user.id,
+          updatedAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
+        }).sort({ updatedAt: -1 }).limit(5),
+        Case.find({ 
+          clientId: req.user.id,
+          lastActivity: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
+        }).sort({ lastActivity: -1 }).limit(5),
+        Message.find({ 
+          $or: [{ senderId: req.user.id }, { receiverId: req.user.id }],
+          createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+        }).sort({ createdAt: -1 }).limit(5)
+      ]);
+
+      const [totalRequests, activeRequests, completedRequests, cancelledRequests] = visaRequestStats;
 
       stats = {
-        userType: 'client',
         totalRequests,
         activeRequests,
         completedRequests,
         cancelledRequests,
         activeCases,
         completedCases,
-        completionRate: totalRequests > 0 ? ((completedRequests / totalRequests) * 100).toFixed(1) : 0,
-        communication: {
-          sentMessages,
-          receivedMessages
+        sentMessages,
+        receivedMessages,
+        proposalsReceived,
+        pendingProposals,
+        acceptedProposals,
+        recentActivity: {
+          visaRequests: recentActivity[0],
+          cases: recentActivity[1],
+          messages: recentActivity[2]
         },
-        recentRequests
+        totalEarnings: 0 // For clients, this might be money saved
       };
 
     } else if (req.user.userType === 'agent' || req.user.userType === 'organization') {
@@ -423,5 +453,89 @@ router.get('/notifications/unread-count', protect, async (req: any, res: Respons
     });
   }
 });
+
+// @desc    Get active applications for dashboard
+// @route   GET /api/dashboard/active-applications
+// @access  Private
+router.get('/active-applications', protect, async (req: any, res: Response) => {
+  try {
+    const VisaRequest = require('../models/VisaRequest').default;
+    const Proposal = require('../models/Proposal').default;
+    
+    let applications: any[] = [];
+
+    if (req.user.userType === 'client') {
+      // Get client's active cases with detailed information
+      const activeCases = await Case.find({ 
+        clientId: req.user.id, 
+        status: { $in: ['active', 'in-progress'] } 
+      })
+        .populate('requestId', 'title visaType country priority')
+        .populate('agentId', 'name avatar isVerified')
+        .sort({ lastActivity: -1 })
+        .limit(10);
+
+      applications = activeCases.map((caseItem: any) => ({
+        id: caseItem._id,
+        title: (caseItem.requestId && typeof caseItem.requestId === 'object') ? caseItem.requestId.title : 'Visa Application',
+        agent: (caseItem.agentId && typeof caseItem.agentId === 'object') ? caseItem.agentId.name : 'Agent',
+        status: getHumanReadableStatus(caseItem.status, caseItem.progress),
+        progress: caseItem.progress,
+        dueDate: caseItem.estimatedCompletionDate,
+        priority: (caseItem.requestId && typeof caseItem.requestId === 'object') ? caseItem.requestId.priority : 'medium',
+        type: 'case'
+      }));
+
+    } else if (req.user.userType === 'agent') {
+      // Get agent's active cases
+      const activeCases = await Case.find({ 
+        agentId: req.user.id, 
+        status: { $in: ['active', 'in-progress'] } 
+      })
+        .populate('requestId', 'title visaType country priority')
+        .populate('clientId', 'name avatar')
+        .sort({ lastActivity: -1 })
+        .limit(10);
+
+      applications = activeCases.map((caseItem: any) => ({
+        id: caseItem._id,
+        title: (caseItem.requestId && typeof caseItem.requestId === 'object') ? caseItem.requestId.title : 'Visa Application',
+        client: (caseItem.clientId && typeof caseItem.clientId === 'object') ? caseItem.clientId.name : 'Client',
+        status: getHumanReadableStatus(caseItem.status, caseItem.progress),
+        progress: caseItem.progress,
+        dueDate: caseItem.estimatedCompletionDate,
+        priority: (caseItem.requestId && typeof caseItem.requestId === 'object') ? caseItem.requestId.priority : 'medium',
+        type: 'case'
+      }));
+    }
+
+    const response: ApiResponse = {
+      success: true,
+      data: applications,
+      message: 'Active applications fetched successfully'
+    };
+
+    res.status(200).json(response);
+  } catch (error) {
+    console.error('Get active applications error:', error);
+    const response: ApiResponse = {
+      success: false,
+      error: 'Error fetching active applications'
+    };
+    res.status(500).json(response);
+  }
+});
+
+// Helper function to convert status to human readable format
+function getHumanReadableStatus(status: string, progress: number): string {
+  if (status === 'active' || status === 'in-progress') {
+    if (progress < 25) return 'Initial Review';
+    if (progress < 50) return 'Documents Review';
+    if (progress < 75) return 'Application Processing';
+    if (progress < 90) return 'Final Review';
+    return 'Awaiting Completion';
+  }
+  return status.replace(/[-_]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+}
 
 export default router;
