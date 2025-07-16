@@ -97,6 +97,58 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/cases', caseRoutes);
 app.use('/api/calendar', calendarRoutes);
 
+// Root endpoint - API information
+app.get('/', (req: any, res: any) => {
+  res.json({
+    success: true,
+    message: 'VM Visa Backend API',
+    version: '1.0.0',
+    status: 'running',
+    endpoints: {
+      health: '/api/health',
+      auth: '/api/auth',
+      users: '/api/users',
+      visaRequests: '/api/visa-requests',
+      proposals: '/api/proposals',
+      messages: '/api/messages',
+      documents: '/api/documents',
+      escrow: '/api/escrow',
+      reviews: '/api/reviews',
+      payments: '/api/payments',
+      admin: '/api/admin',
+      dashboard: '/api/dashboard',
+      cases: '/api/cases',
+      calendar: '/api/calendar'
+    },
+    documentation: 'See README.md for API documentation'
+  });
+});
+
+// API info endpoint
+app.get('/api', (req: any, res: any) => {
+  res.json({
+    success: true,
+    message: 'VM Visa API v1.0.0',
+    timestamp: new Date().toISOString(),
+    endpoints: [
+      'GET /api/health - Health check',
+      'POST /api/auth/login - User login',
+      'POST /api/auth/register - User registration',
+      'GET /api/users - Get users',
+      'GET /api/visa-requests - Get visa requests',
+      'GET /api/proposals - Get proposals',
+      'GET /api/messages - Get messages',
+      'GET /api/documents - Get documents',
+      'GET /api/escrow - Get escrow transactions',
+      'GET /api/reviews - Get reviews',
+      'GET /api/payments - Get payments',
+      'GET /api/dashboard - Dashboard data',
+      'GET /api/cases - Get cases',
+      'GET /api/calendar - Calendar events'
+    ]
+  });
+});
+
 // Health check endpoint
 app.get('/api/health', (req: any, res: any) => {
   res.json({ 

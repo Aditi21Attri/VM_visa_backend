@@ -113,6 +113,14 @@ Your project now includes a `render.yaml` file for automatic configuration.
    - Visit: `https://your-app.onrender.com/api/health`
    - Should return: `{"status":"OK","timestamp":"...","uptime":...}`
 
+4. **Test Root Endpoint**
+   - Visit: `https://your-app.onrender.com/`
+   - Should return API information and available endpoints
+
+5. **Test API Info Endpoint**
+   - Visit: `https://your-app.onrender.com/api`
+   - Should return list of all available API endpoints
+
 ### Step 5: Common Deployment Issues & Solutions
 
 #### Build Failures
@@ -134,6 +142,16 @@ Your project now includes a `render.yaml` file for automatic configuration.
 #### Cold Starts
 - **Issue**: First request takes long time
 - **Solution**: Normal for free tier, consider paid plans for better performance
+
+#### "Not found" Error at Root
+- **Issue**: `{"success":false,"error":"Not found - /"}` when visiting root URL
+- **Solution**: ✅ **Fixed!** Root route now shows API information
+- **Test**: Visit `https://your-app.onrender.com/` - should show API endpoints
+
+#### API Endpoints Not Working
+- **Issue**: 404 errors on API calls
+- **Solution**: Ensure all API calls include `/api` prefix
+- **Example**: Use `/api/auth/login` not `/auth/login`
 
 ### Step 6: Continuous Deployment
 
