@@ -98,7 +98,7 @@ app.use('/api/cases', caseRoutes);
 app.use('/api/calendar', calendarRoutes);
 
 // Health check endpoint
-app.get('/api/health', (req, res) => {
+app.get('/api/health', (req: any, res: any) => {
   res.json({ 
     status: 'OK', 
     timestamp: new Date().toISOString(),

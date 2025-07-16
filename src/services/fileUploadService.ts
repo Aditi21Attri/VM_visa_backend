@@ -38,17 +38,17 @@ class FileUploadService {
   // Multer configuration for local storage
   getMulterConfig() {
     const storage = multer.diskStorage({
-      destination: (req, file, cb) => {
+      destination: (req: any, file: any, cb: any) => {
         cb(null, this.uploadDir);
       },
-      filename: (req, file, cb) => {
+      filename: (req: any, file: any, cb: any) => {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
         const ext = path.extname(file.originalname);
         cb(null, file.fieldname + '-' + uniqueSuffix + ext);
       }
     });
 
-    const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+    const fileFilter = (req: Request, file: any, cb: any) => {
       // Allowed file types
       const allowedTypes = [
         'image/jpeg',
@@ -95,7 +95,7 @@ class FileUploadService {
   }
 
   // Process uploaded file
-  async processUpload(file: Express.Multer.File, uploadToCloud: boolean = true): Promise<UploadResult> {
+  async processUpload(file: any, uploadToCloud: boolean = true): Promise<UploadResult> {
     try {
       const result: UploadResult = {
         filename: file.filename,

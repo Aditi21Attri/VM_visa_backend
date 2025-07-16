@@ -5,6 +5,7 @@ import { ApiResponse } from '../types';
 
 interface AuthenticatedRequest extends Request {
   user?: any;
+  headers: any;
 }
 
 export const protect = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<any> => {
