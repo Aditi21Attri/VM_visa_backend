@@ -197,3 +197,29 @@ If deployment fails:
 3. Test build locally first
 4. Check database connectivity
 5. Review CORS configuration
+
+## 🌐 Frontend Environment Variables (VITE_API_URL)
+
+When deploying your frontend, you need to configure `VITE_API_URL` to point to your backend:
+
+### Development (Local)
+In your `frontend/.env` file:
+```env
+VITE_API_URL=http://localhost:5000/api
+```
+
+### Production (After Backend Deployed to Render)
+In your `frontend/.env.production` or build settings:
+```env
+VITE_API_URL=https://your-backend-app-name.onrender.com/api
+```
+
+**Important Notes:**
+- Replace `your-backend-app-name` with your actual Render service name
+- The `/api` suffix is important as all your backend routes are prefixed with `/api`
+- For Netlify/Vercel frontend deployment, set this in their environment variables section
+
+**Example with actual Render URL:**
+```env
+VITE_API_URL=https://vm-visa-backend-abc123.onrender.com/api
+```
