@@ -49,8 +49,14 @@ const app = express();
 const server = createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || "http://localhost:8080",
-    methods: ["GET", "POST", "PUT", "DELETE"]
+    origin: [
+      process.env.FRONTEND_URL || "http://localhost:5173",
+      "http://localhost:8080",
+      "https://vm-visa-test.vercel.app",
+      "https://vm-visa-frontend.vercel.app"
+    ],
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true
   }
 });
 
