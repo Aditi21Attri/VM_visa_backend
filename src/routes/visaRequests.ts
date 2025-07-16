@@ -53,13 +53,22 @@ router.get('/', [
     // Build query
     const query: any = {};
     
-    // Only show pending requests by default for public access
-    query.status = status;
+    // If userId is specified, show all statuses for that user
+    // Otherwise, only show pending requests for public access
+    if (userId) {
+      query.userId = userId;
+      // For user's own requests, include all statuses unless specifically filtered
+      if (status && status !== 'all') {
+        query.status = status;
+      }
+    } else {
+      // For public access, only show pending requests by default
+      query.status = status || 'pending';
+    }
 
     if (visaType) query.visaType = visaType;
     if (country) query.country = new RegExp(country, 'i');
     if (priority) query.priority = priority;
-    if (userId) query.userId = userId;
 
     if (search) {
       query.$or = [

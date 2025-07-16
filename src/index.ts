@@ -54,8 +54,8 @@ const io = new Server(server, {
   }
 });
 
-// Ensure PORT is set to 5000
-const PORT = 5000;
+// Use environment PORT or default to 5000
+const PORT = process.env.PORT || 5000;
 
 // Connect to MongoDB
 connectDB();
