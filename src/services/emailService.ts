@@ -122,7 +122,7 @@ class EmailService {
         <h2 style="color: #2563eb;">Password Reset Request</h2>
         <p>You have requested to reset your password for VM Visa Platform.</p>
         <p>Click the link below to reset your password:</p>
-        <a href="${process.env.FRONTEND_URL}/reset-password?token=${resetToken}" 
+        <a href="${process.env.FRONTEND_URL}/reset-password/${resetToken}" 
            style="background-color: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
           Reset Password
         </a>

@@ -29,9 +29,28 @@ export const protect = async (req: AuthenticatedRequest, res: Response, next: Ne
   }
 
   try {
-    // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
-    console.log('Auth middleware - Token decoded, user ID:', decoded.id);
+    // Verify token with detailed error logging
+    let decoded: any;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
+      console.log('Auth middleware - Token decoded, user ID:', decoded.id);
+    } catch (tokenError: any) {
+      console.error('Auth middleware - Token verification error:', tokenError.name, tokenError.message);
+      // Check if token expired
+      if (tokenError.name === 'TokenExpiredError') {
+        const response: ApiResponse = {
+          success: false,
+          error: 'Your session has expired. Please log in again.'
+        };
+        return res.status(401).json(response);
+      } else {
+        const response: ApiResponse = {
+          success: false,
+          error: 'Invalid authentication token'
+        };
+        return res.status(401).json(response);
+      }
+    }
 
     // Get user from token
     const user = await User.findById(decoded.id).select('-password');

@@ -4,7 +4,8 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import User from '../models/User';
 import { protect } from '../middleware/auth';
-import { ApiResponse, AuthResponse, RegisterData, LoginData, ChangePasswordData } from '../types';
+import { ApiResponse, AuthResponse, RegisterData, LoginData, ChangePasswordData, ForgotPasswordData, ResetPasswordData } from '../types';
+import emailService from '../services/emailService';
 
 const router = express.Router();
 
@@ -151,9 +152,14 @@ router.post('/login', [
       return res.status(401).json(response);
     }
 
-    // Generate JWT token
+    // Generate JWT token with longer expiration
     const token = user.getSignedJwtToken();
+    
+    // Log successful login with token details
+    console.log('🎉 Login successful for user:', user.email, '(ID:', user._id, ')');
+    console.log('✅ Token generated successfully');
 
+    // Send back token in both body and as a HTTP-only cookie for better security
     const response: AuthResponse = {
       success: true,
       token,
@@ -409,7 +415,8 @@ router.put('/change-password', protect, [
 // @route   POST /api/auth/forgot-password
 // @access  Public
 router.post('/forgot-password', [
-  body('email').isEmail().normalizeEmail().withMessage('Please provide a valid email')
+  body('email').isEmail().normalizeEmail().withMessage('Please provide a valid email'),
+  body('userType').optional().isIn(['client', 'agent', 'organization']).withMessage('Invalid user type')
 ], async (req: Request, res: Response) => {
   try {
     const errors = validationResult(req);
@@ -421,9 +428,15 @@ router.post('/forgot-password', [
       return res.status(400).json(response);
     }
 
-    const { email } = req.body;
+    const { email, userType }: ForgotPasswordData & { userType?: string } = req.body;
 
-    const user = await User.findOne({ email });
+    // Build query - if userType is provided, include it in the search
+    const query: any = { email };
+    if (userType) {
+      query.userType = userType;
+    }
+
+    const user = await User.findOne(query);
     if (!user) {
       const response: ApiResponse = {
         success: false,
@@ -436,16 +449,31 @@ router.post('/forgot-password', [
     const resetToken = user.getResetPasswordToken();
     await user.save({ validateBeforeSave: false });
 
-    // For now, just return the token (in production, send email)
-    const response: ApiResponse = {
-      success: true,
-      data: {
-        resetToken // Remove this in production
-      },
-      message: 'Password reset token generated. Check your email.'
-    };
+    try {
+      // Send password reset email
+      await emailService.sendPasswordResetEmail(user.email, resetToken);
+      
+      const response: ApiResponse = {
+        success: true,
+        message: 'Password reset link has been sent to your email address'
+      };
 
-    res.status(200).json(response);
+      res.status(200).json(response);
+    } catch (emailError) {
+      console.error('Email sending failed:', emailError);
+      
+      // If email fails, remove the reset token
+      user.resetPasswordToken = undefined;
+      user.resetPasswordExpire = undefined;
+      await user.save({ validateBeforeSave: false });
+      
+      const response: ApiResponse = {
+        success: false,
+        error: 'Email could not be sent. Please try again later.'
+      };
+      
+      res.status(500).json(response);
+    }
   } catch (error) {
     console.error('Forgot password error:', error);
     const response: ApiResponse = {
@@ -492,7 +520,8 @@ router.put('/reset-password/:resettoken', [
     }
 
     // Set new password
-    user.password = req.body.password;
+    const { password }: ResetPasswordData = req.body;
+    user.password = password;
     user.resetPasswordToken = undefined;
     user.resetPasswordExpire = undefined;
     await user.save();
