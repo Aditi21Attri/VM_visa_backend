@@ -329,6 +329,7 @@ router.post('/release-milestone', protect, [
     // Update milestone status
     milestone.status = 'approved';
     milestone.approvedAt = new Date();
+    milestone.isPaid = true;
     await caseDoc.save();
 
     res.status(200).json({

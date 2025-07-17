@@ -64,6 +64,10 @@ const caseMilestoneSchema = new Schema<ICaseMilestone>({
   agentNotes: {
     type: String,
     maxlength: [1000, 'Notes cannot exceed 1000 characters']
+  },
+  isPaid: {
+    type: Boolean,
+    default: false
   }
 }, { _id: false });
 

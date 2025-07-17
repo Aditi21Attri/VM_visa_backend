@@ -79,7 +79,12 @@ app.use(compression());
 app.use(limiter);
 app.use(morgan('combined'));
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "http://localhost:5173",
+  origin: [
+    process.env.FRONTEND_URL || "http://localhost:5173",
+    "http://localhost:8080",
+    "https://vm-visa-test.vercel.app",
+    "https://vm-visa-frontend.vercel.app"
+  ],
   credentials: true
 }));
 app.use(express.json({ limit: '10mb' }));

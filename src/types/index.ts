@@ -291,6 +291,7 @@ export interface ICaseMilestone {
   }[];
   clientFeedback?: string;
   agentNotes?: string;
+  isPaid?: boolean;
 }
 
 export interface ICase extends Document {
