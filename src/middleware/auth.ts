@@ -23,7 +23,7 @@ export const protect = async (req: AuthenticatedRequest, res: Response, next: Ne
     console.log('Auth middleware - No token provided');
     const response: ApiResponse = {
       success: false,
-      error: 'Not authorized to access this route'
+      error: 'Authentication required. Please log in.'
     };
     return res.status(401).json(response);
   }
@@ -36,17 +36,24 @@ export const protect = async (req: AuthenticatedRequest, res: Response, next: Ne
       console.log('Auth middleware - Token decoded, user ID:', decoded.id);
     } catch (tokenError: any) {
       console.error('Auth middleware - Token verification error:', tokenError.name, tokenError.message);
-      // Check if token expired
+      
+      // Provide specific error messages
       if (tokenError.name === 'TokenExpiredError') {
         const response: ApiResponse = {
           success: false,
           error: 'Your session has expired. Please log in again.'
         };
         return res.status(401).json(response);
+      } else if (tokenError.name === 'JsonWebTokenError') {
+        const response: ApiResponse = {
+          success: false,
+          error: 'Invalid authentication token. Please log in again.'
+        };
+        return res.status(401).json(response);
       } else {
         const response: ApiResponse = {
           success: false,
-          error: 'Invalid authentication token'
+          error: 'Authentication failed. Please log in again.'
         };
         return res.status(401).json(response);
       }
@@ -59,7 +66,7 @@ export const protect = async (req: AuthenticatedRequest, res: Response, next: Ne
       console.log('Auth middleware - User not found for ID:', decoded.id);
       const response: ApiResponse = {
         success: false,
-        error: 'User not found'
+        error: 'User account not found. Please log in again.'
       };
       return res.status(401).json(response);
     }
@@ -68,7 +75,7 @@ export const protect = async (req: AuthenticatedRequest, res: Response, next: Ne
       console.log('Auth middleware - User account deactivated:', user.name);
       const response: ApiResponse = {
         success: false,
-        error: 'User account is deactivated'
+        error: 'Your account has been deactivated. Please contact support.'
       };
       return res.status(401).json(response);
     }
@@ -77,10 +84,10 @@ export const protect = async (req: AuthenticatedRequest, res: Response, next: Ne
     req.user = user;
     next();
   } catch (error) {
-    console.log('Auth middleware - Token verification failed:', error);
+    console.error('Auth middleware - Unexpected error:', error);
     const response: ApiResponse = {
       success: false,
-      error: 'Not authorized to access this route'
+      error: 'Authentication failed. Please log in again.'
     };
     return res.status(401).json(response);
   }

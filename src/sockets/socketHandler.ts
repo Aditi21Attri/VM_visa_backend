@@ -18,23 +18,37 @@ export const initializeSocket = (io: Server) => {
       const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.replace('Bearer ', '');
       
       if (!token) {
-        return next(new Error('Authentication error: No token provided'));
+        console.log('Socket auth: No token provided');
+        return next(new Error('Authentication required'));
       }
 
       const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
       const user = await User.findById(decoded.id).select('-password');
       
-      if (!user || !user.isActive) {
-        return next(new Error('Authentication error: Invalid or inactive user'));
+      if (!user) {
+        console.log('Socket auth: User not found for ID:', decoded.id);
+        return next(new Error('User not found'));
+      }
+
+      if (!user.isActive) {
+        console.log('Socket auth: User account deactivated:', user.name);
+        return next(new Error('Account deactivated'));
       }
 
       socket.userId = user._id.toString();
       socket.userType = user.userType;
       
+      console.log('Socket auth: Success for user:', user.name, user.userType);
       next();
     } catch (error) {
       console.error('Socket authentication error:', error);
-      next(new Error('Authentication error: Invalid token'));
+      if (error.name === 'TokenExpiredError') {
+        next(new Error('Session expired'));
+      } else if (error.name === 'JsonWebTokenError') {
+        next(new Error('Invalid token'));
+      } else {
+        next(new Error('Authentication failed'));
+      }
     }
   });
 

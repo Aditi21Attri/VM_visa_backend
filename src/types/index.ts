@@ -424,6 +424,7 @@ export interface CreateMessageData {
 export interface LoginData {
   email: string;
   password: string;
+  userType?: string; // Optional to match frontend expectations
 }
 
 export interface RegisterData {
@@ -431,6 +432,8 @@ export interface RegisterData {
   email: string;
   password: string;
   userType: 'client' | 'agent' | 'organization';
+  phone?: string;
+  location?: string;
 }
 
 export interface ChangePasswordData {

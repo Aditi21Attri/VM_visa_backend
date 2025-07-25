@@ -249,10 +249,16 @@ userSchema.methods.matchPassword = async function(enteredPassword: string): Prom
 userSchema.methods.getSignedJwtToken = function(): string {
   const payload = { id: this._id, userType: this.userType };
   const secret = process.env.JWT_SECRET as string;
-  // Set a longer expiration time (30 days) and use a consistent value
-  const options: SignOptions = { expiresIn: '30d' };
   
-  console.log('Generating new JWT token for user:', this._id, 'with expiry:', options.expiresIn);
+  if (!secret) {
+    throw new Error('JWT_SECRET is not defined in environment variables');
+  }
+  
+  // Use the JWT_EXPIRE from environment or default to 30 days
+  const expiresIn = process.env.JWT_EXPIRE || '30d';
+  const options: SignOptions = { expiresIn: expiresIn as any };
+  
+  console.log('Generating JWT token for user:', this._id, 'with expiry:', expiresIn);
   return jwt.sign(payload, secret, options);
 };
 

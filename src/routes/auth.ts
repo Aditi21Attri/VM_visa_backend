@@ -110,7 +110,7 @@ router.post('/login', [
 
     console.log('🔍 Login attempt:', { email, password: '***' });
 
-    // Check for user
+    // Check for user - ignore userType from frontend, find by email only
     const user = await User.findOne({ email }).select('+password');
     console.log('👤 User found:', user ? 'Yes' : 'No');
     console.log('👤 User details:', user ? { id: user._id, name: user.name, email: user.email } : 'N/A');

@@ -185,7 +185,7 @@ const paymentSchema = new Schema<IPayment>({
 // Indexes
 paymentMethodSchema.index({ userId: 1 });
 paymentMethodSchema.index({ userId: 1, isDefault: 1 });
-paymentMethodSchema.index({ stripePaymentMethodId: 1 });
+// Note: stripePaymentMethodId already has sparse index from schema definition
 
 paymentSchema.index({ userId: 1 });
 paymentSchema.index({ caseId: 1 });

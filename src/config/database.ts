@@ -2,7 +2,11 @@ import mongoose from 'mongoose';
 
 export const connectDB = async () => {
   try {
-    const conn = await mongoose.connect(process.env.MONGODB_URI as string);
+    const conn = await mongoose.connect(process.env.MONGODB_URI as string, {
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+    });
     
     console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
     
@@ -14,11 +18,7 @@ export const connectDB = async () => {
     
     mongoose.connection.on('disconnected', () => {
       console.log('⚠️ MongoDB disconnected');
-      // Attempt to reconnect
-      setTimeout(() => {
-        console.log('🔄 Attempting to reconnect to MongoDB...');
-        connectDB();
-      }, 5000);
+      // Don't auto-reconnect here, mongoose will handle it
     });
     
     mongoose.connection.on('connected', () => {
@@ -31,13 +31,22 @@ export const connectDB = async () => {
     
     // Graceful shutdown
     process.on('SIGINT', async () => {
-      await mongoose.connection.close();
-      console.log('🔴 MongoDB connection closed through app termination');
-      process.exit(0);
+      try {
+        await mongoose.connection.close();
+        console.log('🔴 MongoDB connection closed through app termination');
+        process.exit(0);
+      } catch (error) {
+        console.error('Error closing MongoDB connection:', error);
+        process.exit(1);
+      }
     });
     
   } catch (error) {
     console.error('❌ Error connecting to MongoDB:', error);
-    process.exit(1);
+    // Don't exit immediately, retry after delay
+    setTimeout(() => {
+      console.log('🔄 Retrying MongoDB connection...');
+      connectDB();
+    }, 5000);
   }
 };
